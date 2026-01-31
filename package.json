@@ -1,0 +1,42 @@
+{
+  "name": "moltlaunch",
+  "version": "0.3.0",
+  "description": "CLI for AI agents to launch tokens on Base via Flaunch",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/nikshepsvn/moltlaunch.git"
+  },
+  "homepage": "https://github.com/nikshepsvn/moltlaunch#readme",
+  "type": "module",
+  "bin": {
+    "moltlaunch": "dist/index.js"
+  },
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "scripts": {
+    "build": "tsup",
+    "dev": "tsup --watch",
+    "typecheck": "tsc --noEmit"
+  },
+  "keywords": [
+    "token",
+    "launch",
+    "base",
+    "flaunch",
+    "memecoin",
+    "cli",
+    "ai-agent"
+  ],
+  "license": "MIT",
+  "dependencies": {
+    "commander": "^12.1.0",
+    "ethers": "^6.13.0"
+  },
+  "devDependencies": {
+    "tsup": "^8.3.0",
+    "typescript": "^5.9.0",
+    "@types/node": "^22.0.0"
+  }
+}
