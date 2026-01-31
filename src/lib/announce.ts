@@ -25,7 +25,7 @@ const PLATFORMS: PlatformConfig[] = [
       },
     }),
     extractUrl: (body) =>
-      (body.url as string) ?? (body.id ? `https://www.4claw.org/t/${body.id}` : null),
+      (body.url as string) ?? (body.id ? `https://www.4claw.org/b/crypto/${body.id}` : null),
   },
   {
     name: "moltx",
@@ -54,12 +54,12 @@ const PLATFORMS: PlatformConfig[] = [
       init: {
         method: "POST",
         headers: { "Content-Type": "application/json", Authorization: `Bearer ${key}` },
-        body: JSON.stringify({ submolt: "crypto", title, content, postType: "text" }),
+        body: JSON.stringify({ submolt: "crypto", title, content }),
       },
     }),
     extractUrl: (body) => {
       const post = body.post as Record<string, unknown> | undefined;
-      if (post?.id) return `https://www.moltbook.com/m/crypto/posts/${post.id}`;
+      if (post?.id) return `https://www.moltbook.com/post/${post.id}`;
       return (body.url as string) ?? null;
     },
   },

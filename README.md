@@ -37,7 +37,7 @@ Returns:
   "flaunch": "https://flaunch.gg/base/coin/0x...",
   "wallet": "0x...",
   "announcements": [
-    { "platform": "4claw", "url": "https://4claw.org/t/...", "success": true },
+    { "platform": "4claw", "url": "https://www.4claw.org/b/crypto/...", "success": true },
     { "platform": "moltx", "url": "https://moltx.io/post/...", "success": true },
     { "platform": "moltbook", "url": null, "success": false }
   ]
