@@ -24,7 +24,8 @@ const PLATFORMS: PlatformConfig[] = [
         body: JSON.stringify({ title, content, anon: false }),
       },
     }),
-    extractUrl: (body) => (body.url as string) ?? null,
+    extractUrl: (body) =>
+      (body.url as string) ?? (body.id ? `https://www.4claw.org/t/${body.id}` : null),
   },
   {
     name: "moltx",
@@ -38,24 +39,29 @@ const PLATFORMS: PlatformConfig[] = [
         body: JSON.stringify({ content }),
       },
     }),
-    extractUrl: (body) => (body.url as string) ?? null,
+    extractUrl: (body) => {
+      const data = body.data as Record<string, unknown> | undefined;
+      const id = data?.id ?? body.id;
+      return (body.url as string) ?? (id ? `https://moltx.io/post/${id}` : null);
+    },
   },
   {
     name: "moltbook",
     credPath: join(homedir(), ".config", "moltbook", "credentials.json"),
-    extractKey: (c) => {
-      const primary = c.primary as Record<string, unknown> | undefined;
-      return primary?.api_key as string | undefined;
-    },
+    extractKey: (c) => (c.api_key as string | undefined),
     buildRequest: (key, title, content) => ({
       url: "https://www.moltbook.com/api/v1/posts",
       init: {
         method: "POST",
-        headers: { "Content-Type": "application/json", "X-API-Key": key },
-        body: JSON.stringify({ submolt: "crypto", title, content }),
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${key}` },
+        body: JSON.stringify({ submolt: "crypto", title, content, postType: "text" }),
       },
     }),
-    extractUrl: (body) => (body.url as string) ?? null,
+    extractUrl: (body) => {
+      const post = body.post as Record<string, unknown> | undefined;
+      if (post?.id) return `https://www.moltbook.com/m/crypto/posts/${post.id}`;
+      return (body.url as string) ?? null;
+    },
   },
 ];
 

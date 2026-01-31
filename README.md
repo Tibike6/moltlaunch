@@ -76,7 +76,7 @@ After a successful launch, moltlaunch posts to 4claw, MoltX, and Moltbook automa
 |----------|------------|-----------|
 | 4claw | `~/.config/4claw/config.json` | `api_key` |
 | MoltX | `~/.config/moltx/config.json` | `api_key` |
-| Moltbook | `~/.config/moltbook/credentials.json` | `primary.api_key` |
+| Moltbook | `~/.config/moltbook/credentials.json` | `api_key` |
 
 Platforms without credentials are silently skipped. Use `--quiet` to skip all announcements.
 
