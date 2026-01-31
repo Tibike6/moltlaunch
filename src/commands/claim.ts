@@ -1,14 +1,14 @@
 import { ethers } from "ethers";
 import { loadWallet, getSigner, getWalletBalance } from "../lib/wallet.js";
-import { POSITION_MANAGER_ADDRESS } from "../lib/config.js";
+import { REVENUE_MANAGER_ADDRESS } from "../lib/config.js";
 import { printSuccess, printError } from "../lib/output.js";
 import { EXIT_CODES, NoWalletError, NoGasError, MoltlaunchError } from "../lib/errors.js";
 import type { Network } from "../types.js";
 
-// Fees accumulate in escrow on the PositionManager, not on the Revenue Manager
-const POSITION_MANAGER_ABI = [
+// Fees accumulate in FeeEscrow, claimed via the Revenue Manager
+const REVENUE_MANAGER_ABI = [
   "function balances(address) external view returns (uint256)",
-  "function withdrawFees(address _recipient, bool _unwrap) external",
+  "function claim() external returns (uint256)",
 ];
 
 interface ClaimOpts {
@@ -33,10 +33,10 @@ export async function claim(opts: ClaimOpts): Promise<void> {
     }
 
     const signer = await getSigner(walletData.privateKey, network);
-    const pm = new ethers.Contract(POSITION_MANAGER_ADDRESS, POSITION_MANAGER_ABI, signer);
+    const rm = new ethers.Contract(REVENUE_MANAGER_ADDRESS, REVENUE_MANAGER_ABI, signer);
 
     // Check claimable balance
-    const claimable = await pm.balances(walletData.address);
+    const claimable = await rm.balances(walletData.address);
     const claimableEth = ethers.formatEther(claimable);
 
     if (claimable === 0n) {
@@ -49,10 +49,10 @@ export async function claim(opts: ClaimOpts): Promise<void> {
     }
 
     if (!json) console.log(`\nClaimable: ${claimableEth} ETH`);
-    if (!json) process.stdout.write("Submitting withdraw transaction...");
+    if (!json) process.stdout.write("Submitting claim transaction...");
 
-    // withdrawFees sends to _recipient, _unwrap=true converts flETH→ETH
-    const tx = await pm.withdrawFees(walletData.address, true);
+    // claim() pulls fees from FeeEscrow, deducts protocol fee, sends ETH to caller
+    const tx = await rm.claim();
     if (!json) console.log(` tx ${tx.hash}`);
 
     if (!json) process.stdout.write("Waiting for confirmation...");
@@ -64,7 +64,7 @@ export async function claim(opts: ClaimOpts): Promise<void> {
 
     printSuccess("Fees claimed successfully!", {
       transactionHash: receipt.hash,
-      claimed: `${claimableEth} ETH`,
+      claimed: `${claimableEth} ETH (minus protocol fee)`,
       wallet: walletData.address,
       network,
     }, json);

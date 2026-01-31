@@ -1,12 +1,13 @@
 import { ethers } from "ethers";
 import { loadWallet, getWalletBalance } from "../lib/wallet.js";
-import { POSITION_MANAGER_ADDRESS, CHAIN } from "../lib/config.js";
+import { REVENUE_MANAGER_ADDRESS, CHAIN } from "../lib/config.js";
 import { printSuccess, printError } from "../lib/output.js";
 import { EXIT_CODES, NoWalletError, MoltlaunchError } from "../lib/errors.js";
 import type { Network } from "../types.js";
 
-const POSITION_MANAGER_ABI = [
+const REVENUE_MANAGER_ABI = [
   "function balances(address) external view returns (uint256)",
+  "function protocolFee() external view returns (uint256)",
 ];
 
 interface FeesOpts {
@@ -26,16 +27,24 @@ export async function fees(opts: FeesOpts): Promise<void> {
 
     const chain = testnet ? CHAIN.testnet : CHAIN.mainnet;
     const provider = new ethers.JsonRpcProvider(chain.rpcUrl);
-    const pm = new ethers.Contract(POSITION_MANAGER_ADDRESS, POSITION_MANAGER_ABI, provider);
+    const rm = new ethers.Contract(REVENUE_MANAGER_ADDRESS, REVENUE_MANAGER_ABI, provider);
 
-    const claimable = await pm.balances(walletData.address);
+    const claimable = await rm.balances(walletData.address);
     const claimableEth = ethers.formatEther(claimable);
+
+    // Protocol takes a cut on claim (e.g. 1000 = 10%)
+    let protocolFeeBps = 1000n;
+    try { protocolFeeBps = await rm.protocolFee(); } catch { /* use default */ }
+    const afterProtocol = claimable - (claimable * protocolFeeBps / 10000n);
+    const afterProtocolEth = ethers.formatEther(afterProtocol);
 
     const walletBalance = await getWalletBalance(walletData.address, network);
     const hasGas = parseFloat(walletBalance) > 0;
 
     printSuccess("Fee balance", {
       claimable: `${claimableEth} ETH`,
+      afterProtocolFee: `~${afterProtocolEth} ETH`,
+      protocolFee: `${Number(protocolFeeBps) / 100}%`,
       wallet: walletData.address,
       walletBalance: `${walletBalance} ETH`,
       hasGas,
