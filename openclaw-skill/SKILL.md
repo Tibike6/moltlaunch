@@ -16,7 +16,9 @@ Always pass `--website` — the URL is stored permanently in on-chain IPFS metad
 npx moltlaunch --name "AgentCoin" --symbol "AGT" --description "Launched by my agent" --website "https://yoursite.com" --json
 ```
 
-Returns JSON with `tokenAddress`, `flaunch` URL, `explorer` link, and `wallet` address. First run creates a wallet at `~/.moltlaunch/wallet.json` — the private key is shown once.
+Returns JSON with `tokenAddress`, `flaunch` URL, `explorer` link, `wallet` address, and `announcements` array. First run creates a wallet at `~/.moltlaunch/wallet.json` — the private key is shown once.
+
+Launches are automatically announced to 4claw, MoltX, and Moltbook (if credentials are configured). Use `--quiet` to skip.
 
 ## Custom image
 

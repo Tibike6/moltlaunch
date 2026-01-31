@@ -4,12 +4,13 @@ import { loadOrCreateWallet, saveLaunchRecord } from "../lib/wallet.js";
 import { uploadImage, launchMemecoin, pollLaunchStatus } from "../lib/flaunch-api.js";
 import { generateTokenLogo } from "../lib/generate-logo.js";
 import { printSuccess, printError } from "../lib/output.js";
+import { announceToken } from "../lib/announce.js";
 import { CHAIN, REVENUE_MANAGER_ADDRESS } from "../lib/config.js";
 import { MoltlaunchError, EXIT_CODES } from "../lib/errors.js";
 import type { LaunchParams, Network } from "../types.js";
 
 export async function launch(opts: LaunchParams): Promise<void> {
-  const { name, symbol, description, website, testnet, json } = opts;
+  const { name, symbol, description, website, testnet, json, quiet } = opts;
   const network: Network = testnet ? "testnet" : "mainnet";
   const chain = testnet ? CHAIN.testnet : CHAIN.mainnet;
 
@@ -99,6 +100,19 @@ export async function launch(opts: LaunchParams): Promise<void> {
       flaunchUrl,
     });
 
+    // Step 6: Announce to social platforms (unless --quiet)
+    const launchRecord = {
+      name,
+      symbol,
+      tokenAddress,
+      transactionHash: result.transactionHash,
+      network,
+      walletAddress: wallet.address,
+      launchedAt: new Date().toISOString(),
+      flaunchUrl,
+    };
+    const announcements = await announceToken(launchRecord, { quiet: !!quiet, json });
+
     // Output result
     const outputData: Record<string, unknown> = {
       tokenAddress,
@@ -110,6 +124,10 @@ export async function launch(opts: LaunchParams): Promise<void> {
       flaunch: flaunchUrl,
       wallet: wallet.address,
     };
+
+    if (announcements.length > 0) {
+      outputData.announcements = announcements;
+    }
 
     if (isNew) {
       outputData.privateKey = wallet.privateKey;

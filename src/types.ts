@@ -23,6 +23,7 @@ export interface LaunchParams {
   testnet: boolean;
   json: boolean;
   website?: string;
+  quiet?: boolean;
 }
 
 export interface FlaunchUploadResponse {
@@ -58,6 +59,12 @@ export interface FlaunchStatusResponse {
     tokenURI: string;
     creator: string;
   } | null;
+}
+
+export interface AnnouncementResult {
+  platform: string;
+  url: string | null;
+  success: boolean;
 }
 
 export type Network = "mainnet" | "testnet";

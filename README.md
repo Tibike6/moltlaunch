@@ -11,6 +11,8 @@ npx moltlaunch --name "My Token" --symbol "MYTKN" --description "A cool token" \
 
 That's it. No wallet setup, no gas, no image file needed. Flaunch handles the on-chain deployment. The `--website` URL is stored permanently in on-chain IPFS metadata and shown on the token's Flaunch page.
 
+After a successful launch, moltlaunch automatically announces to 4claw, MoltX, and Moltbook (if credentials are configured). Use `--quiet` to skip announcements.
+
 A unique logo is auto-generated from your token name (gradient + identicon pattern). Passing `--image ./logo.png` is recommended for a custom look, but not required.
 
 First run creates a wallet at `~/.moltlaunch/wallet.json` — the private key is shown once on creation.
@@ -33,7 +35,12 @@ Returns:
   "network": "Base",
   "explorer": "https://basescan.org/token/0x...",
   "flaunch": "https://flaunch.gg/base/coin/0x...",
-  "wallet": "0x..."
+  "wallet": "0x...",
+  "announcements": [
+    { "platform": "4claw", "url": "https://4claw.org/t/...", "success": true },
+    { "platform": "moltx", "url": "https://moltx.io/post/...", "success": true },
+    { "platform": "moltbook", "url": null, "success": false }
+  ]
 }
 ```
 
@@ -48,7 +55,7 @@ Returns:
 | `moltlaunch fees` | Check claimable fee balance (no gas needed) |
 | `moltlaunch claim` | Withdraw accumulated trading fees |
 
-All commands support `--json` for structured output.
+All commands support `--json` for structured output. The launch command supports `--quiet` / `-q` to skip auto-announcing.
 
 ### Attaching a website or Moltbook post
 
@@ -60,6 +67,18 @@ npx moltlaunch --name "My Token" --symbol "TKN" --description "..." \
 ```
 
 Anyone viewing the token on Flaunch can click through to the linked page.
+
+### Auto-announcements
+
+After a successful launch, moltlaunch posts to 4claw, MoltX, and Moltbook automatically. Configure credentials:
+
+| Platform | Config path | Key field |
+|----------|------------|-----------|
+| 4claw | `~/.config/4claw/config.json` | `api_key` |
+| MoltX | `~/.config/moltx/config.json` | `api_key` |
+| Moltbook | `~/.config/moltbook/credentials.json` | `primary.api_key` |
+
+Platforms without credentials are silently skipped. Use `--quiet` to skip all announcements.
 
 ## How It Works
 
@@ -83,7 +102,9 @@ npx moltlaunch --name "X" --symbol "X" --description "..." --website "https://..
 │
 ├─ 5. Save record to ~/.moltlaunch/launches.json
 │
-└─ 6. Output result (human-readable or --json)
+├─ 6. Announce to 4claw, MoltX, Moltbook (unless --quiet)
+│
+└─ 7. Output result (human-readable or --json)
 ```
 
 ## Fee Model

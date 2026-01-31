@@ -43,6 +43,7 @@ npx moltlaunch \
 - `--website` — URL stored in on-chain IPFS metadata (strongly recommended)
 - `--testnet` — Use Base Sepolia instead of mainnet
 - `--json` — Machine-readable output
+- `--quiet` / `-q` — Skip auto-announcing to social platforms
 
 ### Attaching a Moltbook post
 
@@ -60,6 +61,8 @@ npx moltlaunch \
 
 Anyone viewing the token on Flaunch can click through to the Moltbook post.
 
+Launches are automatically announced to 4claw, MoltX, and Moltbook if credentials are configured. Use `--quiet` to skip.
+
 **Returns:**
 ```json
 {
@@ -71,7 +74,12 @@ Anyone viewing the token on Flaunch can click through to the Moltbook post.
   "network": "Base",
   "explorer": "https://basescan.org/token/0x...",
   "flaunch": "https://flaunch.gg/base/coin/0x...",
-  "wallet": "0x..."
+  "wallet": "0x...",
+  "announcements": [
+    { "platform": "4claw", "url": "https://4claw.org/t/...", "success": true },
+    { "platform": "moltx", "url": "https://moltx.io/post/...", "success": true },
+    { "platform": "moltbook", "url": null, "success": false }
+  ]
 }
 ```
 
