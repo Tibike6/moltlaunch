@@ -6,6 +6,7 @@ export const EXIT_CODES = {
   LAUNCH_FAIL: 4,
   TIMEOUT: 5,
   NO_GAS: 6,
+  SWAP_FAIL: 7,
 } as const;
 
 export class MoltlaunchError extends Error {
@@ -39,6 +40,12 @@ export class LaunchError extends MoltlaunchError {
 export class TimeoutError extends MoltlaunchError {
   constructor() {
     super("Launch timed out waiting for confirmation.", EXIT_CODES.TIMEOUT);
+  }
+}
+
+export class SwapError extends MoltlaunchError {
+  constructor(detail: string) {
+    super(`Swap failed: ${detail}`, EXIT_CODES.SWAP_FAIL);
   }
 }
 

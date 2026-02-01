@@ -5,6 +5,7 @@ import { wallet } from "./commands/wallet.js";
 import { status } from "./commands/status.js";
 import { claim } from "./commands/claim.js";
 import { fees } from "./commands/fees.js";
+import { swap } from "./commands/swap.js";
 
 const require = createRequire(import.meta.url);
 const { version } = require("../package.json") as { version: string };
@@ -52,10 +53,11 @@ program
 
 program
   .command("status")
-  .description("List launched tokens")
+  .description("List all tokens under the revenue manager")
+  .option("--testnet", "Use Base Sepolia testnet", false)
   .option("--json", "Output as JSON", false)
   .action((opts) =>
-    status({ json: opts.json })
+    status({ testnet: opts.testnet, json: opts.json })
   );
 
 program
@@ -74,6 +76,26 @@ program
   .option("--json", "Output as JSON", false)
   .action((opts) =>
     claim({ testnet: opts.testnet, json: opts.json })
+  );
+
+program
+  .command("swap")
+  .description("Swap ETH for tokens or tokens for ETH on Uniswap V4")
+  .requiredOption("--token <address>", "Token address")
+  .requiredOption("--amount <amount>", "Amount (ETH for buy, tokens for sell)")
+  .requiredOption("--side <direction>", "buy or sell")
+  .option("--slippage <percent>", "Slippage tolerance percent", "5")
+  .option("--testnet", "Use Base Sepolia testnet", false)
+  .option("--json", "Output as JSON", false)
+  .action((opts) =>
+    swap({
+      token: opts.token,
+      amount: opts.amount,
+      side: opts.side,
+      slippage: parseFloat(opts.slippage),
+      testnet: opts.testnet,
+      json: opts.json,
+    })
   );
 
 program.parse();

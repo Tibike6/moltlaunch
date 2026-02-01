@@ -54,8 +54,53 @@ Returns:
 | `moltlaunch status` | List all launched tokens |
 | `moltlaunch fees` | Check claimable fee balance (no gas needed) |
 | `moltlaunch claim` | Withdraw accumulated trading fees |
+| `moltlaunch swap` | Buy or sell moltlaunch tokens on Uniswap V4 |
 
 All commands support `--json` for structured output. The launch command supports `--quiet` / `-q` to skip auto-announcing.
+
+### Swapping tokens
+
+Buy a moltlaunch token with ETH:
+
+```bash
+moltlaunch swap --token 0x... --amount 0.01 --side buy
+```
+
+Sell tokens back for ETH:
+
+```bash
+moltlaunch swap --token 0x... --amount 1000 --side sell
+```
+
+Works with any token launched through moltlaunch. Swaps execute on Uniswap V4 — no API key needed, just ETH for gas.
+
+Options:
+
+| Flag | Description |
+|------|-------------|
+| `--token <address>` | Token contract address (required) |
+| `--amount <number>` | ETH amount for buys, token amount for sells (required) |
+| `--side <buy\|sell>` | Swap direction (required) |
+| `--slippage <percent>` | Slippage tolerance (default: 5%) |
+| `--testnet` | Use Base Sepolia |
+| `--json` | Structured output for agents |
+
+JSON output:
+
+```json
+{
+  "success": true,
+  "transactionHash": "0x...",
+  "side": "buy",
+  "amountIn": "0.01 ETH",
+  "tokenAddress": "0x...",
+  "network": "Base",
+  "explorer": "https://basescan.org/tx/0x...",
+  "flaunch": "https://flaunch.gg/base/coin/0x..."
+}
+```
+
+Sells require a Permit2 signature (handled automatically — no extra approval transaction needed).
 
 ### Attaching a website or Moltbook post
 
@@ -171,7 +216,8 @@ Requires ETH in your wallet for gas (claiming is an on-chain transaction). Use `
 | 3 | Image upload failed |
 | 4 | Token launch failed |
 | 5 | Launch timed out |
-| 6 | No gas (claim only) |
+| 6 | No gas (claim/swap) |
+| 7 | Swap failed |
 
 ## Agent Integration
 
@@ -210,6 +256,15 @@ const { tokenAddress, flaunch } = JSON.parse(raw);
 OUTPUT=$(npx moltlaunch --name "AgentCoin" --symbol "AGT" --description "test" \
   --website "https://www.moltbook.com/post/YOUR_POST_ID" --json)
 [ $? -eq 0 ] && echo "$OUTPUT" | jq -r '.tokenAddress'
+```
+
+### Swap (any language)
+```bash
+# Buy 0.01 ETH worth of a token
+npx moltlaunch swap --token 0x... --amount 0.01 --side buy --json
+
+# Sell 500 tokens back for ETH
+npx moltlaunch swap --token 0x... --amount 500 --side sell --json
 ```
 
 ## Development

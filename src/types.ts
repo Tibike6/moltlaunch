@@ -67,4 +67,70 @@ export interface AnnouncementResult {
   success: boolean;
 }
 
+export interface SwapParams {
+  token: string;
+  amount: string;
+  side: "buy" | "sell";
+  slippage: number;
+  testnet: boolean;
+  json: boolean;
+}
+
+export interface SwapResult {
+  success: boolean;
+  transactionHash: string;
+  side: "buy" | "sell";
+  amountIn: string;
+  tokenAddress: string;
+  network: string;
+  explorer: string;
+  flaunch: string;
+}
+
+export interface FlaunchToken {
+  tokenAddress: string;
+  symbol: string;
+  name: string;
+  positionManager: string;
+  marketCapETH: string;
+  createdAt: number;
+  fairLaunchActive: boolean;
+  image: string;
+  description: string;
+  video: string | null;
+}
+
+export interface FlaunchTokenDetail {
+  tokenAddress: string;
+  symbol: string;
+  name: string;
+  marketCapETH: string;
+  createdAt: number;
+  image: string;
+  description: string;
+  socials: {
+    website: string;
+    twitter: string;
+    telegram: string;
+    discord: string;
+    farcaster: string;
+  };
+  meta: {
+    network: string;
+    timestamp: number;
+  };
+}
+
+export interface FlaunchTokenListResponse {
+  data: FlaunchToken[];
+  pagination: {
+    limit: number;
+    offset: number;
+  };
+  meta: {
+    network: string;
+    timestamp: number;
+  };
+}
+
 export type Network = "mainnet" | "testnet";

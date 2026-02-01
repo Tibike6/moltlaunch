@@ -1,6 +1,7 @@
 import { readFile, stat } from "node:fs/promises";
 import {
   FLAUNCH_API_BASE,
+  FLAUNCH_DATA_API_BASE,
   CHAIN,
   MAX_IMAGE_SIZE_BYTES,
   POLL_INTERVAL_MS,
@@ -12,6 +13,8 @@ import type {
   FlaunchUploadResponse,
   FlaunchLaunchResponse,
   FlaunchStatusResponse,
+  FlaunchTokenListResponse,
+  FlaunchTokenDetail,
 } from "../types.js";
 
 function sleep(ms: number): Promise<void> {
@@ -137,6 +140,47 @@ export async function launchMemecoin(params: {
 
   const data = (await response.json()) as FlaunchLaunchResponse;
   return data.jobId;
+}
+
+/**
+ * Fetch all tokens owned by a specific wallet from the Flaunch data API.
+ * Skips the blockchain entirely — reads from flayerlabs REST API.
+ */
+export async function fetchTokensByOwner(
+  ownerAddress: string,
+  network: Network,
+): Promise<FlaunchTokenListResponse> {
+  const chain = network === "testnet" ? CHAIN.testnet : CHAIN.mainnet;
+  const url = `${FLAUNCH_DATA_API_BASE}/v1/${chain.network}/tokens?ownerAddress=${ownerAddress}&limit=100`;
+
+  const response = await fetchWithRetry(url, { method: "GET" });
+
+  if (!response.ok) {
+    const text = await response.text();
+    throw new Error(`Flaunch data API error: ${response.status} — ${text}`);
+  }
+
+  return (await response.json()) as FlaunchTokenListResponse;
+}
+
+/**
+ * Fetch a single token's detail (includes socials) from the Flaunch data API.
+ */
+export async function fetchToken(
+  tokenAddress: string,
+  network: Network,
+): Promise<FlaunchTokenDetail> {
+  const chain = network === "testnet" ? CHAIN.testnet : CHAIN.mainnet;
+  const url = `${FLAUNCH_DATA_API_BASE}/v1/${chain.network}/tokens/${tokenAddress}`;
+
+  const response = await fetchWithRetry(url, { method: "GET" });
+
+  if (!response.ok) {
+    const text = await response.text();
+    throw new Error(`Flaunch data API error: ${response.status} — ${text}`);
+  }
+
+  return (await response.json()) as FlaunchTokenDetail;
 }
 
 /**

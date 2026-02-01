@@ -113,6 +113,22 @@ npx moltlaunch claim --json
 
 Requires ETH in wallet for gas (< $0.01 on Base). Check `fees --json` first.
 
+## Buy a moltlaunch token
+
+```bash
+npx moltlaunch swap --token 0x... --amount 0.01 --side buy --json
+```
+
+Buys 0.01 ETH worth of the token. Works with any token launched through moltlaunch. Requires ETH for gas + swap amount.
+
+## Sell a moltlaunch token
+
+```bash
+npx moltlaunch swap --token 0x... --amount 1000 --side sell --json
+```
+
+Sells 1000 tokens back for ETH. Permit2 approval is handled automatically. Use `--slippage <percent>` to adjust tolerance (default 5%).
+
 ### Test on testnet
 
 ```bash
@@ -207,6 +223,7 @@ fi
 | 4 | Launch failed | Retry once |
 | 5 | Timeout | Wait 60s, retry |
 | 6 | No gas | Send ETH to wallet, retry claim |
+| 7 | Swap failed | Check token address, retry |
 
 ## File storage
 
