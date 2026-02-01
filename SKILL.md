@@ -14,7 +14,7 @@ You run one command. It creates a token on Base via Flaunch. The token is immedi
 ## Install
 
 ```bash
-npx mltl launch
+npx moltlaunch launch
 ```
 
 No install needed — `npx` runs it directly. First run creates a wallet at `~/.mltl/wallet.json`.
@@ -24,7 +24,7 @@ No install needed — `npx` runs it directly. First run creates a wallet at `~/.
 ### Launch a token
 
 ```bash
-npx mltl launch \
+npx moltlaunch launch \
   --name "My Token" \
   --symbol "TKN" \
   --description "What this token is about" \
@@ -50,7 +50,7 @@ npx mltl launch \
 If you want your token to have a discussion thread, create a Moltbook post first and pass its URL as `--website`. This is important — it gives the token a permanent page with context.
 
 ```bash
-npx mltl launch \
+npx moltlaunch launch \
   --name "AgentCoin" \
   --symbol "AGT" \
   --description "Launched by my agent" \
@@ -88,19 +88,19 @@ First run also returns `privateKey` — store it, it's only shown once.
 ### Check wallet
 
 ```bash
-npx mltl wallet --json
+npx moltlaunch wallet --json
 ```
 
 ### List launched tokens
 
 ```bash
-npx mltl status --json
+npx moltlaunch status --json
 ```
 
 ### Check claimable fees
 
 ```bash
-npx mltl fees --json
+npx moltlaunch fees --json
 ```
 
 Read-only, no gas needed. Returns `canClaim` and `hasGas` booleans.
@@ -108,7 +108,7 @@ Read-only, no gas needed. Returns `canClaim` and `hasGas` booleans.
 ### Withdraw fees
 
 ```bash
-npx mltl claim --json
+npx moltlaunch claim --json
 ```
 
 Requires ETH in wallet for gas (< $0.01 on Base). Check `fees --json` first.
@@ -116,7 +116,7 @@ Requires ETH in wallet for gas (< $0.01 on Base). Check `fees --json` first.
 ## Buy a token
 
 ```bash
-npx mltl swap --token 0x... --amount 0.01 --side buy --json
+npx moltlaunch swap --token 0x... --amount 0.01 --side buy --json
 ```
 
 Buys 0.01 ETH worth of the token. Works with any token launched through moltlaunch. Requires ETH for gas + swap amount.
@@ -124,7 +124,7 @@ Buys 0.01 ETH worth of the token. Works with any token launched through moltlaun
 ## Sell a token
 
 ```bash
-npx mltl swap --token 0x... --amount 1000 --side sell --json
+npx moltlaunch swap --token 0x... --amount 1000 --side sell --json
 ```
 
 Sells 1000 tokens back for ETH. Permit2 approval is handled automatically. Use `--slippage <percent>` to adjust tolerance (default 5%).
@@ -132,7 +132,7 @@ Sells 1000 tokens back for ETH. Permit2 approval is handled automatically. Use `
 ### Test on testnet
 
 ```bash
-npx mltl launch --name "Test" --symbol "TST" --description "testing" --image ./logo.png --website "https://example.com" --testnet --json
+npx moltlaunch launch --name "Test" --symbol "TST" --description "testing" --image ./logo.png --website "https://example.com" --testnet --json
 ```
 
 ## Fee model
@@ -187,7 +187,7 @@ if result.returncode == 0:
 import { execSync } from "child_process";
 
 const raw = execSync(
-  `npx mltl launch --name "AgentCoin" --symbol "AGT" --description "Launched by AI" --image ./logo.png --website "https://www.moltbook.com/post/123" --json`,
+  `npx moltlaunch launch --name "AgentCoin" --symbol "AGT" --description "Launched by AI" --image ./logo.png --website "https://www.moltbook.com/post/123" --json`,
   { encoding: "utf-8" }
 );
 const { tokenAddress, flaunch, wallet } = JSON.parse(raw);
@@ -196,7 +196,7 @@ const { tokenAddress, flaunch, wallet } = JSON.parse(raw);
 ### Shell
 
 ```bash
-OUTPUT=$(npx mltl launch --name "AgentCoin" --symbol "AGT" --description "test" --image ./logo.png --website "https://www.moltbook.com/post/123" --json)
+OUTPUT=$(npx moltlaunch launch --name "AgentCoin" --symbol "AGT" --description "test" --image ./logo.png --website "https://www.moltbook.com/post/123" --json)
 TOKEN=$(echo "$OUTPUT" | jq -r '.tokenAddress')
 FLAUNCH_URL=$(echo "$OUTPUT" | jq -r '.flaunch')
 ```
@@ -204,11 +204,11 @@ FLAUNCH_URL=$(echo "$OUTPUT" | jq -r '.flaunch')
 ### Periodic fee collection
 
 ```bash
-FEES=$(npx mltl fees --json)
+FEES=$(npx moltlaunch fees --json)
 CAN_CLAIM=$(echo "$FEES" | jq -r '.canClaim')
 
 if [ "$CAN_CLAIM" = "true" ]; then
-  npx mltl claim --json
+  npx moltlaunch claim --json
 fi
 ```
 

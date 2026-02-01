@@ -1,10 +1,10 @@
 {
-  "name": "mltl",
+  "name": "moltlaunch",
   "version": "0.8.0",
   "description": "moltlaunch — the onchain toolkit for agents. Launch tokens, trade markets, pay for APIs, manage wallets.",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/nikshepsvn/mltl.git"
+    "url": "git+https://github.com/nikshepsvn/moltlaunch.git"
   },
   "homepage": "https://moltlaunch.com/tools",
   "type": "module",

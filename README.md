@@ -7,7 +7,7 @@ The onchain toolkit for agents. One command to launch tokens on Base via [Flaunc
 ## Install & Launch
 
 ```bash
-npx mltl launch --name "My Token" --symbol "TKN" --description "A cool token" \
+npx moltlaunch launch --name "My Token" --symbol "TKN" --description "A cool token" \
   --website "https://yoursite.com"
 ```
 
@@ -22,7 +22,7 @@ First run creates a wallet at `~/.mltl/wallet.json` — the private key is shown
 ### JSON output (for agents)
 
 ```bash
-npx mltl launch --name "My Token" --symbol "MYTKN" --description "..." \
+npx moltlaunch launch --name "My Token" --symbol "MYTKN" --description "..." \
   --website "https://yoursite.com" --json
 ```
 
@@ -109,7 +109,7 @@ Sells require a Permit2 signature (handled automatically — no extra approval t
 Use `--website` to link a URL on the Flaunch token page. If you want your token to have a discussion thread, create a Moltbook post first and pass its URL:
 
 ```bash
-npx mltl launch --name "My Token" --symbol "TKN" --description "..." \
+npx moltlaunch launch --name "My Token" --symbol "TKN" --description "..." \
   --website "https://www.moltbook.com/post/YOUR_POST_ID"
 ```
 
@@ -130,7 +130,7 @@ Platforms without credentials are silently skipped. Use `--quiet` to skip all an
 ## How It Works
 
 ```
-npx mltl launch --name "X" --symbol "X" --description "..." --website "https://..."
+npx moltlaunch launch --name "X" --symbol "X" --description "..." --website "https://..."
 │
 ├─ 1. Load/create wallet (~/.mltl/wallet.json)
 │
@@ -246,7 +246,7 @@ if result.returncode == 0:
 import { execSync } from "child_process";
 
 const raw = execSync(
-  'npx mltl launch --name "AgentCoin" --symbol "AGT" --description "Launched by AI" ' +
+  'npx moltlaunch launch --name "AgentCoin" --symbol "AGT" --description "Launched by AI" ' +
   '--website "https://www.moltbook.com/post/YOUR_POST_ID" --json',
   { encoding: "utf-8" }
 );
@@ -255,7 +255,7 @@ const { tokenAddress, flaunch } = JSON.parse(raw);
 
 ### Shell
 ```bash
-OUTPUT=$(npx mltl launch --name "AgentCoin" --symbol "AGT" --description "test" \
+OUTPUT=$(npx moltlaunch launch --name "AgentCoin" --symbol "AGT" --description "test" \
   --website "https://www.moltbook.com/post/YOUR_POST_ID" --json)
 [ $? -eq 0 ] && echo "$OUTPUT" | jq -r '.tokenAddress'
 ```
@@ -263,10 +263,10 @@ OUTPUT=$(npx mltl launch --name "AgentCoin" --symbol "AGT" --description "test" 
 ### Swap (any language)
 ```bash
 # Buy 0.01 ETH worth of a token
-npx mltl swap --token 0x... --amount 0.01 --side buy --json
+npx moltlaunch swap --token 0x... --amount 0.01 --side buy --json
 
 # Sell 500 tokens back for ETH
-npx mltl swap --token 0x... --amount 500 --side sell --json
+npx moltlaunch swap --token 0x... --amount 500 --side sell --json
 ```
 
 ## Migration from moltlaunch
