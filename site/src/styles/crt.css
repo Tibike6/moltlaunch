@@ -27,8 +27,8 @@ html { background: #000; }
     0deg,
     transparent 0px,
     transparent 2px,
-    rgba(0,0,0,0.03) 2px,
-    rgba(0,0,0,0.03) 4px
+    rgba(0,0,0,0.015) 2px,
+    rgba(0,0,0,0.015) 4px
   );
   pointer-events: none;
   z-index: 100;
@@ -48,7 +48,7 @@ html { background: #000; }
 }
 
 .panel-header .label {
-  color: #994444;
+  color: #bb5555;
   display: flex;
   align-items: center;
   gap: 6px;

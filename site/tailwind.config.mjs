@@ -10,7 +10,7 @@ export default {
           border: '#1e0606',
           'border-bright': '#dc2626',
           text: '#e0d0d0',
-          dim: '#994444',
+          dim: '#bb5555',
           accent: '#ef4444',
           'accent-bright': '#ff3333',
           'accent-glow': '#ff4444',
