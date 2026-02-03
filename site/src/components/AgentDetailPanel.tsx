@@ -1,23 +1,81 @@
 import { useMemo } from 'react';
 import { useNetworkStore } from '../stores/networkStore';
+import { useTokenStore } from '../stores/tokenStore';
 import { FLAUNCH_URL } from '../lib/constants';
-import type { PowerScore } from '@moltlaunch/shared';
+import { formatMcap, formatVol, formatEthUsd } from '../lib/formatters';
+import type { NetworkAgent as Agent } from '@moltlaunch/shared';
 
 const BASESCAN_TX = 'https://basescan.org/tx';
+
+/** SVG radar chart */
+function RadarChart({ pillars, color }: {
+  pillars: Array<{ key: string; val: number }>; color: string;
+}) {
+  const size = 120, cx = size / 2, cy = size / 2, maxR = 42;
+  const angles = [-Math.PI / 2, 0, Math.PI / 2, Math.PI];
+
+  const point = (angle: number, pct: number) => ({
+    x: cx + Math.cos(angle) * maxR * pct,
+    y: cy + Math.sin(angle) * maxR * pct,
+  });
+
+  const rings = [0.25, 0.5, 0.75, 1];
+  const pts = pillars.map((p, i) => point(angles[i], Math.max(0.04, p.val / 100)));
+  const dataPath = pts.map((p, i) => `${i === 0 ? 'M' : 'L'}${p.x},${p.y}`).join(' ') + 'Z';
+
+  return (
+    <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`}>
+      {rings.map((r) => {
+        const rPts = angles.map((a) => point(a, r));
+        const d = rPts.map((p, i) => `${i === 0 ? 'M' : 'L'}${p.x},${p.y}`).join(' ') + 'Z';
+        return <path key={r} d={d} fill="none" stroke="#1a0808" strokeWidth={0.75} />;
+      })}
+      {angles.map((a, i) => {
+        const end = point(a, 1);
+        return <line key={i} x1={cx} y1={cy} x2={end.x} y2={end.y} stroke="#1a0808" strokeWidth={0.75} />;
+      })}
+      <path d={dataPath} fill={`${color}18`} stroke={color} strokeWidth={1.5} />
+      {pts.map((p, i) => (
+        <circle key={i} cx={p.x} cy={p.y} r={2.5} fill={color} />
+      ))}
+      {pillars.map((p, i) => {
+        const lbl = point(angles[i], 1.32);
+        return (
+          <text key={i} x={lbl.x} y={lbl.y} textAnchor="middle" dominantBaseline="central"
+            fill="#555" fontSize={8} fontFamily="monospace" fontWeight="bold">
+            {p.key}
+          </text>
+        );
+      })}
+    </svg>
+  );
+}
 
 export default function AgentDetailPanel() {
   const selectedAgent = useNetworkStore((s) => s.selectedAgent);
   const agents = useNetworkStore((s) => s.agents);
   const swaps = useNetworkStore((s) => s.swaps);
   const crossEdges = useNetworkStore((s) => s.crossEdges);
+  const agentDeltas = useNetworkStore((s) => s.agentDeltas);
   const setSelectedAgent = useNetworkStore((s) => s.setSelectedAgent);
+  const ethUsdPrice = useTokenStore((s) => s.ethUsdPrice);
 
   const agent = useMemo(
     () => agents.find((a) => a.tokenAddress === selectedAgent),
     [agents, selectedAgent],
   );
 
-  // Tokens held by this agent's wallet (from crossEdges)
+  const rank = useMemo(() => {
+    if (!agent) return 0;
+    const sorted = [...agents].sort((a, b) => b.powerScore.total - a.powerScore.total);
+    return sorted.findIndex((a) => a.tokenAddress === agent.tokenAddress) + 1;
+  }, [agents, agent]);
+
+  const delta = useMemo(() => {
+    if (!selectedAgent) return null;
+    return agentDeltas.get(selectedAgent) ?? null;
+  }, [agentDeltas, selectedAgent]);
+
   const heldTokens = useMemo(() => {
     if (!agent) return [];
     const ownerLower = agent.creator.toLowerCase();
@@ -33,7 +91,6 @@ export default function AgentDetailPanel() {
     return agents.filter((a) => heldAddresses.has(a.tokenAddress.toLowerCase()));
   }, [agents, crossEdges, agent]);
 
-  // Agents whose creators have cross-traded this token
   const crossAgents = useMemo(() => {
     if (!agent) return [];
     const crossMakers = new Set(
@@ -47,7 +104,6 @@ export default function AgentDetailPanel() {
     );
   }, [agents, swaps, agent]);
 
-  // Agent actions: this agent's own txs + cross-trades involving this token
   const activity = useMemo(() => {
     if (!agent) return [];
     const ownerLower = agent.creator.toLowerCase();
@@ -64,316 +120,281 @@ export default function AgentDetailPanel() {
       seen.add(s.transactionHash);
       const tag = s.isCrossTrade ? 'cross' as const : 'self' as const;
       entries.push({ swap: s, tag });
-      if (entries.length >= 15) break;
+      if (entries.length >= 12) break;
     }
     return entries;
   }, [swaps, agent]);
 
   if (!selectedAgent || !agent) return null;
 
-  const scoreColor =
-    agent.powerScore.total >= 75 ? '#34d399' :
-    agent.powerScore.total >= 50 ? '#a3e635' :
-    agent.powerScore.total >= 25 ? '#fb923c' :
-    '#ef4444';
-
+  const score = agent.powerScore.total;
+  const scoreColor = score >= 75 ? '#34d399' : score >= 50 ? '#a3e635' : score >= 25 ? '#fb923c' : '#ef4444';
   const pct = agent.priceChange24h;
-  const pctColor = pct > 0 ? '#34d399' : pct < 0 ? '#ff4444' : '#666';
+  const pctColor = pct > 0 ? '#34d399' : pct < 0 ? '#ff4444' : '#999';
+  const hasBanner = !!agent.bannerUrl;
+
+  const pillars: Array<{ key: string; val: number; label: string; tooltip: string }> = [
+    { key: 'REV', val: agent.powerScore.revenue, label: 'Revenue', tooltip: 'Revenue — fees earned and claimable balance' },
+    { key: 'MKT', val: agent.powerScore.market, label: 'Market', tooltip: 'Market — market cap strength and price momentum' },
+    { key: 'NET', val: agent.powerScore.network, label: 'Network', tooltip: 'Network — cross-holdings and connections to other agents' },
+    { key: 'VIT', val: agent.powerScore.vitality, label: 'Vitality', tooltip: 'Vitality — recent activity, swaps, memos, wallet health' },
+  ];
 
   return (
-    <div className="absolute top-0 right-0 bottom-0 w-[360px] overflow-y-auto z-10 font-mono detail-panel-scroll hud-command-card">
-      {/* Agent identity header */}
-      <div className="relative px-5 pt-5 pb-4 hud-wireframe">
-        <button
-          onClick={() => setSelectedAgent(null)}
-          className="absolute top-3 right-3 text-crt-dim opacity-25 hover:opacity-60 hover:text-[#ff4444] text-[12px] w-6 h-6 flex items-center justify-center cursor-pointer transition-all"
-        >
-          ✕
-        </button>
-        <div className="flex items-start gap-3.5">
-          <div className="relative shrink-0">
-            {agent.image ? (
-              <img
-                src={agent.image}
-                alt=""
-                className="w-12 h-12 border border-[#2a1212]"
-                style={{ imageRendering: 'pixelated' }}
-              />
-            ) : (
-              <div className="w-12 h-12 border border-[#2a1212] bg-[#0a0303] flex items-center justify-center text-crt-dim text-[10px]">
-                ?
-              </div>
-            )}
+    <div className="flex-1 min-h-0 overflow-y-auto font-mono detail-panel-scroll hud-command-card">
+
+      {/* Close */}
+      <button
+        onClick={() => setSelectedAgent(null)}
+        className="absolute top-3 right-3 z-20 w-8 h-8 flex items-center justify-center text-[14px] text-white opacity-40 hover:opacity-80 hover:text-[#ff4444] cursor-pointer transition-all"
+        style={{ textShadow: '0 1px 4px rgba(0,0,0,0.8)' }}
+      >
+        ✕
+      </button>
+
+      {/* ── BANNER + IDENTITY ── */}
+      {hasBanner ? (
+        <>
+          <div className="relative w-full h-[120px] bg-[#080303] overflow-hidden">
+            <img src={agent.bannerUrl} alt="" className="w-full h-full object-cover" />
+            <div className="absolute inset-0" style={{ background: 'linear-gradient(transparent 40%, #060101)' }} />
           </div>
-          <div className="flex-1 min-w-0">
-            <div className="text-[16px] text-crt-text truncate leading-tight">{agent.name}</div>
-            <div className="flex items-center gap-2 mt-0.5">
-              <span className="text-[11px] text-crt-dim opacity-35">{agent.symbol}</span>
-              {agent.type === 'agent' && (
-                <span className="text-[8px] text-[#38bdf8] px-1.5 py-px border border-[#38bdf820] uppercase tracking-wider" style={{ textShadow: '0 0 4px rgba(56,189,248,0.2)' }}>agent</span>
-              )}
-              {agent.type === 'human' && (
-                <span className="text-[8px] text-[#a3e635] px-1.5 py-px border border-[#a3e63520] uppercase tracking-wider">human</span>
-              )}
+          <div className="px-5 -mt-10 pb-3 relative z-10">
+            <div className="flex gap-4 items-end">
+              <div className="relative shrink-0">
+                <div className="w-[80px] h-[80px] rounded-full border-2 border-[#2a1212] overflow-hidden bg-[#0a0303]">
+                  {agent.image ? (
+                    <img src={agent.image} alt="" className="w-full h-full" style={{ imageRendering: 'pixelated' }} />
+                  ) : (
+                    <div className="w-full h-full flex items-center justify-center text-[24px] text-crt-dim opacity-15">?</div>
+                  )}
+                </div>
+                <div
+                  className="absolute -bottom-1.5 left-1/2 -translate-x-1/2 px-2 py-0.5 text-[10px] font-black rounded-full"
+                  style={{ color: rank <= 3 ? '#fbbf24' : '#ccc', backgroundColor: '#060101', border: `1px solid ${rank <= 3 ? '#fbbf2440' : '#2a1212'}` }}
+                >
+                  #{rank}
+                </div>
+              </div>
+              <div className="flex-1 min-w-0 pb-1">
+                <div className="text-[24px] font-black text-white leading-tight truncate">{agent.name}</div>
+                <div className="flex items-center gap-2 mt-1">
+                  <span className="text-[14px] text-[#888]">${agent.symbol}</span>
+                  {agent.type === 'agent' && <span className="text-[10px] text-[#38bdf8] px-1.5 py-0.5 border border-[#38bdf830] uppercase tracking-wider rounded-sm">bot</span>}
+                  {agent.type === 'human' && <span className="text-[10px] text-[#a3e635] px-1.5 py-0.5 border border-[#a3e63530] uppercase tracking-wider rounded-sm">human</span>}
+                  {delta?.isNew && <span className="text-[10px] text-[#a78bfa] px-1.5 py-0.5 border border-[#a78bfa30] uppercase tracking-wider rounded-sm animate-pulse">new</span>}
+                </div>
+              </div>
             </div>
             {agent.description && (
-              <div className="text-[10px] text-crt-dim opacity-30 mt-1.5 leading-relaxed line-clamp-2">
-                {agent.description}
+              <div className="mt-2.5 text-[13px] text-[#777] leading-relaxed line-clamp-2">{agent.description}</div>
+            )}
+          </div>
+        </>
+      ) : (
+        <>
+          <div className="h-[3px]" style={{ backgroundColor: scoreColor, boxShadow: `0 0 12px ${scoreColor}40` }} />
+          <div className="px-5 pt-5 pb-3">
+            <div className="flex gap-4">
+              <div className="relative shrink-0">
+                <div className="w-[88px] h-[88px] rounded-full border-2 border-[#2a1212] overflow-hidden bg-[#0a0303]">
+                  {agent.image ? (
+                    <img src={agent.image} alt="" className="w-full h-full" style={{ imageRendering: 'pixelated' }} />
+                  ) : (
+                    <div className="w-full h-full flex items-center justify-center text-[28px] text-crt-dim opacity-15">?</div>
+                  )}
+                </div>
+                <div
+                  className="absolute -bottom-1.5 left-1/2 -translate-x-1/2 px-2 py-0.5 text-[10px] font-black rounded-full"
+                  style={{ color: rank <= 3 ? '#fbbf24' : '#ccc', backgroundColor: '#060101', border: `1px solid ${rank <= 3 ? '#fbbf2440' : '#2a1212'}` }}
+                >
+                  #{rank}
+                </div>
+              </div>
+              <div className="flex-1 min-w-0 pt-0.5">
+                <div className="text-[24px] font-black text-white leading-tight truncate">{agent.name}</div>
+                <div className="flex items-center gap-2 mt-1.5">
+                  <span className="text-[14px] text-[#888]">${agent.symbol}</span>
+                  {agent.type === 'agent' && <span className="text-[10px] text-[#38bdf8] px-1.5 py-0.5 border border-[#38bdf830] uppercase tracking-wider rounded-sm">bot</span>}
+                  {agent.type === 'human' && <span className="text-[10px] text-[#a3e635] px-1.5 py-0.5 border border-[#a3e63530] uppercase tracking-wider rounded-sm">human</span>}
+                  {delta?.isNew && <span className="text-[10px] text-[#a78bfa] px-1.5 py-0.5 border border-[#a78bfa30] uppercase tracking-wider rounded-sm animate-pulse">new</span>}
+                </div>
+                {agent.description && (
+                  <div className="mt-2 text-[13px] text-[#777] leading-relaxed line-clamp-2">{agent.description}</div>
+                )}
+              </div>
+            </div>
+          </div>
+        </>
+      )}
+
+      <div className="h-px bg-[#1a0808]" />
+
+      {/* ── POWER SCORE ── */}
+      <div className="px-5 py-3 flex items-center gap-4">
+        <div className="shrink-0 -ml-2">
+          <RadarChart pillars={pillars} color={scoreColor} />
+        </div>
+        <div className="flex-1 min-w-0">
+          <div className="flex items-baseline gap-1.5">
+            <span className="text-[52px] font-black leading-none" style={{ color: scoreColor }}>{score}</span>
+            {delta && !delta.isNew && delta.scoreDelta !== 0 && (
+              <span className="text-[14px] font-bold" style={{ color: delta.scoreDelta > 0 ? '#34d399' : '#ff4444' }}>
+                {delta.scoreDelta > 0 ? '+' : ''}{delta.scoreDelta}
+              </span>
+            )}
+          </div>
+          <div className="space-y-0.5 mt-2">
+            {pillars.map(({ key, val, tooltip }) => {
+              const c = val >= 75 ? '#34d399' : val >= 50 ? '#a3e635' : val >= 25 ? '#fb923c' : '#ef4444';
+              return (
+                <div key={key} className="flex items-center gap-1.5" title={tooltip}>
+                  <span className="text-[9px] text-[#444] w-7 uppercase">{key}</span>
+                  <div className="flex-1 h-[3px] bg-[#1a0808]">
+                    <div className="h-full" style={{ width: `${val}%`, backgroundColor: c, transition: 'width 0.6s' }} />
+                  </div>
+                  <span className="text-[15px] font-black w-7 text-right leading-none" style={{ color: c }}>{val}</span>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      </div>
+
+      <div className="h-px bg-[#1a0808]" />
+
+      {/* ── STATS ── */}
+      <div className="px-5 py-2.5 flex flex-wrap gap-x-5 gap-y-1">
+        <Stat label="Mcap" value={formatMcap(agent.marketCapETH, ethUsdPrice)} delta={delta && !delta.isNew && Math.abs(delta.mcapDeltaPct) >= 2 ? `${delta.mcapDeltaPct > 0 ? '+' : ''}${delta.mcapDeltaPct.toFixed(0)}%` : undefined} deltaUp={delta ? delta.mcapDeltaPct > 0 : false} />
+        <Stat label="24h" value={`${pct > 0 ? '+' : ''}${pct.toFixed(1)}%`} valueColor={pctColor} />
+        <Stat label="Vol" value={formatVol(agent.volume24hETH, ethUsdPrice)} />
+        <Stat label="Holders" value={String(agent.holders)} delta={delta?.holdersDelta !== undefined && delta.holdersDelta !== 0 ? `${delta.holdersDelta > 0 ? '+' : ''}${delta.holdersDelta}` : undefined} deltaUp={delta?.holdersDelta ? delta.holdersDelta > 0 : false} />
+        <Stat label="Wallet" value={formatEthUsd(agent.walletETH, ethUsdPrice)} />
+        <Stat label="Claimable" value={formatEthUsd(agent.claimableETH, ethUsdPrice)} valueColor={agent.claimableETH > 0 ? '#fbbf24' : undefined} />
+        <Stat label="Swaps" value={String(agent.recentSwaps)} />
+        <Stat label="Cross" value={String(agent.crossTradeCount)} valueColor={agent.crossTradeCount > 0 ? '#a78bfa' : undefined} />
+        <Stat label="Holdings" value={String(agent.crossHoldings)} valueColor={agent.crossHoldings > 0 ? '#a78bfa' : undefined} />
+        <Stat label="Memos" value={String(agent.memoCount)} valueColor={agent.memoCount > 0 ? '#38bdf8' : undefined} />
+      </div>
+
+      {/* ── CONNECTIONS ── */}
+      {(heldTokens.length > 0 || crossAgents.length > 0) && (
+        <>
+          <div className="h-px bg-[#1a0808]" />
+          <div className="px-5 py-3">
+            {heldTokens.length > 0 && (
+              <div className={crossAgents.length > 0 ? 'mb-3' : ''}>
+                <div className="text-[9px] text-[#555] uppercase tracking-widest mb-2">portfolio <span className="text-[#444]">· {heldTokens.length}</span></div>
+                <div className="flex flex-wrap gap-3 items-end">
+                  {heldTokens.map((a) => <AgentBubble key={a.tokenAddress} agent={a} onClick={() => setSelectedAgent(a.tokenAddress)} />)}
+                </div>
+              </div>
+            )}
+            {crossAgents.length > 0 && (
+              <div>
+                <div className="text-[9px] text-[#555] uppercase tracking-widest mb-2">cross-traders <span className="text-[#444]">· {crossAgents.length}</span></div>
+                <div className="flex flex-wrap gap-3 items-end">
+                  {crossAgents.slice(0, 8).map((a) => <AgentBubble key={a.tokenAddress} agent={a} onClick={() => setSelectedAgent(a.tokenAddress)} />)}
+                </div>
               </div>
             )}
           </div>
-        </div>
-
-        {/* Key metrics row beneath name */}
-        <div className="flex items-center gap-4 mt-3.5">
-          <div className="flex items-center gap-1.5">
-            <span
-              className="text-[20px] font-bold"
-              style={{ color: scoreColor, textShadow: `0 0 10px ${scoreColor}30` }}
-            >
-              {agent.powerScore.total}
-            </span>
-            <span className="text-[9px] text-crt-dim opacity-35 uppercase tracking-wider">pwr</span>
-          </div>
-          <div className="w-px h-4 bg-[#1e0606]" />
-          <div>
-            <span className="text-[13px] text-crt-text opacity-80">{formatEth(agent.marketCapETH)}</span>
-            <span className="text-[9px] text-crt-dim opacity-30 ml-1">mcap</span>
-          </div>
-          <div className="w-px h-4 bg-[#1e0606]" />
-          <span
-            className="text-[13px]"
-            style={{ color: pctColor }}
-          >
-            {pct > 0 ? '+' : ''}{pct.toFixed(1)}%
-          </span>
-        </div>
-      </div>
-
-      {/* Power breakdown */}
-      <div className="px-5 pt-4 pb-4 border-b border-[#0e0404]">
-        <div className="hud-section-tab">influence</div>
-        <PowerBar score={agent.powerScore} />
-        <div className="grid grid-cols-4 gap-2 mt-3">
-          <PillarStat label="REV" value={agent.powerScore.revenue} max={25} tooltip="Fee revenue generated" />
-          <PillarStat label="MKT" value={agent.powerScore.market} max={25} tooltip="Market cap & liquidity" />
-          <PillarStat label="NET" value={agent.powerScore.network} max={25} tooltip="Holders & cross-holdings" />
-          <PillarStat label="VIT" value={agent.powerScore.vitality} max={25} tooltip="Recent activity & momentum" />
-        </div>
-        <div className="text-[8px] text-crt-dim opacity-25 mt-2.5 text-right tracking-wider">
-          scoring subject to change
-        </div>
-      </div>
-
-      {/* Economics */}
-      <div className="px-5 pt-4 pb-4 border-b border-[#0e0404]">
-        <div className="hud-section-tab">economics</div>
-        <div className="grid grid-cols-2 gap-x-6 gap-y-3 text-[11px]">
-          <StatLine label="mcap" value={formatEth(agent.marketCapETH)} />
-          <StatLine label="vol 24h" value={formatEth(agent.volume24hETH)} />
-          <StatLine label="holders" value={String(agent.holders)} />
-          <StatLine label="wallet" value={formatEth(agent.walletETH)} />
-          <StatLine label="cross-hold" value={String(agent.crossHoldings)} accent={agent.crossHoldings > 0} />
-          <StatLine
-            label="24h"
-            value={`${pct > 0 ? '+' : ''}${pct.toFixed(1)}%`}
-            color={pct > 0 ? 'text-crt-green' : pct < 0 ? 'text-[#ff4444]' : undefined}
-          />
-        </div>
-      </div>
-
-      {/* Holdings — tokens this agent's wallet holds */}
-      {heldTokens.length > 0 && (
-        <div className="px-5 pt-4 pb-4 border-b border-[#0e0404]">
-          <div className="hud-section-tab">portfolio <span className="text-crt-dim opacity-30 ml-1 text-[8px] normal-case tracking-normal">{heldTokens.length} tokens</span></div>
-          <div className="flex flex-wrap gap-1.5">
-            {heldTokens.map((a) => (
-              <a
-                key={a.tokenAddress}
-                href={`${FLAUNCH_URL}/coin/${a.tokenAddress}`}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="flex items-center gap-1.5 px-2.5 py-1.5 bg-[#0a0303] border border-[#1e0606] text-[11px] text-[#60a5fa] opacity-70 hover:opacity-100 hover:border-[#2a1212] hover:bg-[#0e0505] transition-all"
-              >
-                {a.image && (
-                  <img src={a.image} alt="" className="w-3.5 h-3.5" style={{ imageRendering: 'pixelated' }} />
-                )}
-                {a.symbol}
-              </a>
-            ))}
-          </div>
-        </div>
+        </>
       )}
 
-      {/* Cross-agents trading this token */}
-      {crossAgents.length > 0 && (
-        <div className="px-5 pt-4 pb-4 border-b border-[#0e0404]">
-          <div className="hud-section-tab">connected agents <span className="text-crt-dim opacity-30 ml-1 text-[8px] normal-case tracking-normal">{crossAgents.length} agents</span></div>
-          <div className="flex flex-wrap gap-1.5">
-            {crossAgents.slice(0, 8).map((a) => (
-              <button
-                key={a.tokenAddress}
-                onClick={() => setSelectedAgent(a.tokenAddress)}
-                className="flex items-center gap-1.5 px-2.5 py-1.5 bg-[#0a0303] border border-[#1e0606] text-[11px] text-crt-text opacity-70 hover:opacity-100 hover:border-[#2a1212] hover:bg-[#0e0505] cursor-pointer transition-all"
-              >
-                {a.image && (
-                  <img src={a.image} alt="" className="w-3.5 h-3.5" style={{ imageRendering: 'pixelated' }} />
-                )}
-                {a.symbol}
-              </button>
-            ))}
-          </div>
-        </div>
-      )}
-
-      {/* Agent actions */}
+      {/* ── ACTIVITY ── */}
       {activity.length > 0 && (
-        <div className="px-5 pt-4 pb-4 border-b border-[#0e0404]">
-          <div className="hud-section-tab">activity <span className="text-crt-dim opacity-30 ml-1 text-[8px] normal-case tracking-normal">{activity.length} txns</span></div>
-          <div className="space-y-2">
-            {activity.map(({ swap, tag }, i) => (
-              <SwapRow key={`al-${swap.transactionHash}-${i}`} swap={swap} showToken={tag === 'self'} tag={tag} />
-            ))}
+        <>
+          <div className="h-px bg-[#1a0808]" />
+          <div className="px-5 pt-3 pb-1">
+            <span className="text-[9px] text-[#555] uppercase tracking-widest">activity <span className="text-[#444]">· {activity.length}</span></span>
           </div>
-        </div>
+          {activity.map(({ swap, tag }, i) => {
+            const isBuy = swap.type === 'buy';
+            const diffMs = Date.now() - swap.timestamp * 1000;
+            const time = diffMs < 60_000 ? 'now' : diffMs < 3600_000 ? `${Math.floor(diffMs / 60_000)}m` : `${Math.floor(diffMs / 3600_000)}h`;
+            const amt = formatEthUsd(swap.amountETH, ethUsdPrice);
+            const c = isBuy ? '#34d399' : '#ff4444';
+
+            return (
+              <div key={`${swap.transactionHash}-${i}`} className="flex items-center gap-2 px-5 py-1.5 text-[11px] hover:bg-[#0a0404] transition-colors">
+                <span className="text-[10px] text-[#444] w-6 shrink-0">{time}</span>
+                <span className="font-bold uppercase text-[10px] shrink-0" style={{ color: c }}>{swap.type}</span>
+                {tag === 'cross' && <span className="text-[8px] text-[#a78bfa] px-0.5 border border-[#a78bfa30] shrink-0">x</span>}
+                <a href={`${FLAUNCH_URL}/coin/${swap.tokenAddress}`} target="_blank" rel="noopener noreferrer" className="text-[#ccc] hover:text-white truncate transition-colors">{swap.tokenSymbol}</a>
+                <span className="shrink-0 text-[10px]" style={{ color: c, opacity: 0.7 }}>{amt}</span>
+                <a href={`${BASESCAN_TX}/${swap.transactionHash}`} target="_blank" rel="noopener noreferrer" className="ml-auto text-[#444] hover:text-[#888] text-[9px] shrink-0 transition-colors">tx&#8599;</a>
+              </div>
+            );
+          })}
+          <div className="h-2" />
+        </>
       )}
 
-      {/* Flaunch link */}
-      <div className="px-5 py-5">
+      {/* ── TRADE CTA ── */}
+      <div className="h-px bg-[#1a0808]" />
+      <div className="px-5 py-4">
         <a
           href={agent.flaunchUrl}
           target="_blank"
           rel="noopener noreferrer"
-          className="block text-center text-[11px] text-crt-accent-glow uppercase tracking-[0.15em] opacity-50 hover:opacity-100 transition-all border border-[#1e0606] hover:border-[#3a1818] px-3 py-3 hover:bg-[#0e0505]"
-          style={{ textShadow: '0 0 6px rgba(255,68,68,0.2)' }}
+          className="block text-center text-[16px] text-[#ff4444] uppercase tracking-[0.2em] font-bold py-3 border border-[#ff444430] hover:border-[#ff444460] hover:bg-[#ff444408] transition-all cursor-pointer rounded-sm"
+          style={{ textShadow: '0 0 8px rgba(255,68,68,0.3)' }}
         >
-          view on flaunch →
+          trade on flaunch
         </a>
       </div>
     </div>
   );
 }
 
-function PowerBar({ score }: { score: PowerScore }) {
-  const color =
-    score.total >= 75 ? '#34d399' :
-    score.total >= 50 ? '#a3e635' :
-    score.total >= 25 ? '#fb923c' :
-    '#ef4444';
-
-  const glow = score.total >= 75 ? `0 0 8px ${color}40` : 'none';
-
+/** Score-sized avatar bubble for connections */
+function AgentBubble({ agent: a, onClick }: {
+  agent: { symbol: string; image: string; powerScore: { total: number } };
+  onClick: () => void;
+}) {
+  const s = a.powerScore.total;
+  // Size: 28px min, 48px max based on score
+  const sz = Math.round(28 + (s / 100) * 20);
+  const c = s >= 75 ? '#34d399' : s >= 50 ? '#a3e635' : s >= 25 ? '#fb923c' : '#ef4444';
   return (
-    <div className="flex items-center gap-2">
-      <div className="flex-1 hud-health-bar">
-        <div
-          className="hud-health-fill"
-          style={{ width: `${score.total}%`, backgroundColor: color, boxShadow: glow }}
-        />
-      </div>
-      <span className="text-[16px] font-bold" style={{ color, textShadow: glow }}>
-        {score.total}
-      </span>
-    </div>
-  );
-}
-
-function PillarStat({ label, value, max, tooltip }: { label: string; value: number; max: number; tooltip?: string }) {
-  const pct = Math.min(100, (value / max) * 100);
-  const color =
-    pct >= 75 ? '#34d399' :
-    pct >= 50 ? '#a3e635' :
-    pct >= 25 ? '#fb923c' :
-    '#ef4444';
-
-  return (
-    <div className="text-center bg-[#080303] border border-[#0e0404] px-2 py-2.5 cursor-default" title={tooltip}>
-      <div className="text-[9px] text-crt-dim opacity-45 uppercase tracking-[0.15em] mb-1.5">{label}</div>
+    <button onClick={onClick} className="flex flex-col items-center gap-1 cursor-pointer group transition-transform hover:scale-110" style={{ width: sz + 8 }}>
       <div
-        className="text-[15px] mb-2"
-        style={{ color, textShadow: pct >= 50 ? `0 0 6px ${color}30` : 'none' }}
+        className="rounded-full overflow-hidden bg-[#0a0303] shrink-0"
+        style={{
+          width: sz, height: sz,
+          border: `2px solid ${c}40`,
+          boxShadow: `0 0 8px ${c}20`,
+        }}
       >
-        {value}
-      </div>
-      <div className="h-[3px] bg-[#0a0303] overflow-hidden">
-        <div
-          className="h-full transition-all duration-500"
-          style={{ width: `${pct}%`, backgroundColor: color, boxShadow: pct >= 50 ? `0 0 4px ${color}40` : 'none' }}
-        />
-      </div>
-    </div>
-  );
-}
-
-function StatLine({ label, value, color, accent }: { label: string; value: string; color?: string; accent?: boolean }) {
-  return (
-    <div className="flex justify-between items-baseline py-0.5">
-      <span className="text-crt-dim opacity-40 uppercase tracking-[0.1em] text-[10px]">{label}</span>
-      <span className={`text-[12px] ${color ?? (accent ? 'text-[#a78bfa]' : 'text-crt-text opacity-85')}`}>
-        {value}
-      </span>
-    </div>
-  );
-}
-
-function SwapRow({ swap, showToken, tag }: { swap: { transactionHash: string; tokenAddress: string; tokenSymbol: string; timestamp: number; type: 'buy' | 'sell'; amountETH: number; makerName: string | null; isCrossTrade: boolean; memo: string | null }; showToken?: boolean; tag?: 'self' | 'cross' }) {
-  const time = new Date(swap.timestamp * 1000);
-  const timeStr = `${time.getHours().toString().padStart(2, '0')}:${time.getMinutes().toString().padStart(2, '0')}`;
-  const isBuy = swap.type === 'buy';
-
-  const badgeClass = tag === 'self' ? 'hud-badge-self' : 'hud-badge-cross';
-
-  return (
-    <div className="group py-1 border-b border-[#0a0303] last:border-0">
-      <div className="flex items-center gap-1.5 text-[11px] opacity-65 group-hover:opacity-100 transition-opacity">
-        {tag && <span className={`hud-badge ${badgeClass}`}>{tag}</span>}
-        <span className="text-crt-dim opacity-35 text-[10px]">{timeStr}</span>
-        {!showToken && swap.makerName && (
-          <span className="text-crt-text opacity-45 truncate max-w-[80px] text-[10px]" title={swap.makerName}>
-            {swap.makerName}
-          </span>
+        {a.image ? (
+          <img src={a.image} alt="" className="w-full h-full" style={{ imageRendering: 'pixelated' }} />
+        ) : (
+          <div className="w-full h-full flex items-center justify-center text-[10px] text-[#444]">?</div>
         )}
-        <span
-          className={isBuy ? 'text-crt-green' : 'text-[#ff4444]'}
-          style={{ textShadow: `0 0 4px ${isBuy ? 'rgba(52,211,153,0.3)' : 'rgba(255,68,68,0.3)'}` }}
-        >
-          {isBuy ? 'buy' : 'sell'}
-        </span>
-        {showToken && (
-          <a
-            href={`${FLAUNCH_URL}/coin/${swap.tokenAddress}`}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="text-crt-text opacity-55 hover:opacity-100 transition-opacity"
-          >
-            {swap.tokenSymbol}
-          </a>
-        )}
-        <span className="text-crt-dim opacity-35 text-[10px]">
-          {swap.amountETH > 0 ? swap.amountETH.toFixed(4) : '0'} ETH
-        </span>
-        <a
-          href={`${BASESCAN_TX}/${swap.transactionHash}`}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="text-crt-dim opacity-20 hover:opacity-60 hover:text-[#ff4444] transition-all ml-auto text-[9px]"
-          title="View on Basescan"
-        >
-          tx↗
-        </a>
       </div>
-      {swap.memo && (
-        <div className="ml-5 mt-1 mb-0.5 text-[10px] text-[#60a5fa] opacity-50 italic whitespace-pre-wrap break-words max-w-[280px] leading-relaxed">
-          &ldquo;{swap.memo.slice(0, 80)}&rdquo;
-        </div>
-      )}
-    </div>
+      <span className="text-[8px] text-[#666] group-hover:text-white transition-colors truncate w-full text-center">{a.symbol}</span>
+    </button>
   );
 }
 
-function formatEth(val: number): string {
-  if (val <= 0) return '0';
-  if (val >= 1) return val.toFixed(2) + ' ETH';
-  if (val >= 0.01) return val.toFixed(3) + ' ETH';
-  return val.toFixed(4) + ' ETH';
+/** Inline stat — label above, big value below, no border/card */
+function Stat({ label, value, valueColor, delta, deltaUp }: {
+  label: string;
+  value: string;
+  valueColor?: string;
+  delta?: string;
+  deltaUp?: boolean;
+}) {
+  return (
+    <div className="py-0.5">
+      <div className="text-[8px] text-[#444] uppercase tracking-wider">{label}</div>
+      <div className="flex items-baseline gap-1">
+        <span className="text-[16px] font-black leading-tight" style={valueColor ? { color: valueColor } : { color: '#e7e9ea' }}>{value}</span>
+        {delta && (
+          <span className="text-[10px] font-bold" style={{ color: deltaUp ? '#34d399' : '#ff4444' }}>{delta}</span>
+        )}
+      </div>
+    </div>
+  );
 }

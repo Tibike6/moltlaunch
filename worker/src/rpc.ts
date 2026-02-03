@@ -5,9 +5,10 @@ const AGGREGATE3_SELECTOR = '0x82ad56cb';
 const BALANCES_SELECTOR = '0x27e235e3';
 const GET_ETH_BALANCE_SELECTOR = '0x4d2301cc';
 
-/** Call Base RPC (JSON-RPC) */
+/** Call Base RPC (JSON-RPC), preferring Alchemy for reliability */
 async function rpcCall(env: Env, method: string, params: unknown[]): Promise<unknown> {
-  const res = await fetch(env.BASE_RPC, {
+  const rpcUrl = env.ALCHEMY_RPC || env.BASE_RPC;
+  const res = await fetch(rpcUrl, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ jsonrpc: '2.0', id: 1, method, params }),
@@ -77,10 +78,15 @@ export async function batchReadBalances(
     const arrayOffset = '0000000000000000000000000000000000000000000000000000000000000020';
     const fullCalldata = AGGREGATE3_SELECTOR + arrayOffset + arrayLen + pointers.join('') + elements.join('');
 
-    const result = await rpcCall(env, 'eth_call', [
-      { to: MULTICALL3, data: fullCalldata },
-      'latest',
-    ]) as string;
+    // Use Alchemy for reliability — public Base RPC often drops Multicall responses
+    const rpcUrl = env.ALCHEMY_RPC || env.BASE_RPC;
+    const rpcRes = await fetch(rpcUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'eth_call', params: [{ to: MULTICALL3, data: fullCalldata }, 'latest'] }),
+    });
+    const rpcJson = await rpcRes.json() as Record<string, unknown>;
+    const result = rpcJson.result as string;
 
     if (!result || result === '0x' || result.length < 10) {
       return { claimableMap, walletMap };
@@ -107,7 +113,7 @@ export async function batchReadBalances(
       if (bytesLen === 0) continue;
 
       const valueHex = dataHex.slice(bytesStart + 64, bytesStart + 64 + bytesLen * 2);
-      const value = parseInt(valueHex || '0', 16) / 1e18;
+      const value = Number(BigInt('0x' + (valueHex || '0'))) / 1e18;
 
       const call = calls[i];
       if (call.type === 'claimable') {
@@ -116,8 +122,8 @@ export async function batchReadBalances(
         walletMap.set(call.owner, value);
       }
     }
-  } catch {
-    // Multicall failed — return empty maps
+  } catch (err) {
+    console.error('[balances] Multicall failed:', err instanceof Error ? err.message : String(err));
   }
 
   return { claimableMap, walletMap };

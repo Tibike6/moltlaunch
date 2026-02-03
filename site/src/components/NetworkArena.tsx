@@ -1,12 +1,14 @@
 import HoldingsGraph from './HoldingsGraph';
 import NetworkStatsBar from './NetworkStatsBar';
-import AgentDetailPanel from './AgentDetailPanel';
-import SwapFeed from './SwapFeed';
+import SidePanel from './SidePanel';
 import SwapTicker from './SwapTicker';
 import { useNetworkGame } from '../hooks/useNetworkGame';
+import { useEthPrice } from '../hooks/useEthPrice';
 
 /** Graph-first network view: always renders UI, agents populate progressively */
 export default function NetworkArena() {
+  // Fetch ETH/USD price — populates tokenStore for all child components
+  useEthPrice();
   const { loadingState, loadProgress, error, agents, manualRefresh, canRefresh, refreshCooldown } = useNetworkGame();
 
   const isLoading = loadingState === 'loading';
@@ -15,40 +17,61 @@ export default function NetworkArena() {
 
   return (
     <div className="flex-1 min-h-0 flex flex-col overflow-hidden">
-      {/* Progress status bar — visible during loading, fades on complete */}
+      {/* Loading state — game-like boot sequence */}
       {isLoading && (
         <div
-          className="shrink-0 relative overflow-hidden transition-opacity duration-500"
+          className="shrink-0 relative overflow-hidden transition-opacity duration-700"
           style={{ opacity: isComplete ? 0 : 1 }}
         >
-          {/* Thin progress track */}
-          <div className="h-[2px] bg-[#0a0303]">
+          {/* Progress track with glow */}
+          <div className="h-[2px] bg-[#0a0303] relative">
             <div
               className="h-full transition-all duration-300 ease-out"
               style={{
-                width: `${pct}%`,
-                background: 'rgba(52,211,153,0.8)',
-                boxShadow: '0 0 8px rgba(52,211,153,0.4)',
+                width: `${Math.max(pct, 15)}%`,
+                background: 'linear-gradient(90deg, rgba(255,68,68,0.6), rgba(52,211,153,0.8))',
+                boxShadow: '0 0 12px rgba(52,211,153,0.4), 0 0 4px rgba(255,68,68,0.3)',
+              }}
+            />
+            {/* Scanning sweep indicator */}
+            <div
+              className="absolute top-0 h-full w-[60px]"
+              style={{
+                background: 'linear-gradient(90deg, transparent, rgba(52,211,153,0.3), transparent)',
+                animation: 'sweep 2s ease-in-out infinite',
               }}
             />
           </div>
-          {/* Phase message */}
-          <div className="px-3 py-1 font-mono text-[9px] text-crt-green opacity-60 tracking-wide bg-[#060101] border-b border-[#1e0606]">
-            {loadProgress.message || 'initializing...'}
+          {/* Phase message with scan aesthetic */}
+          <div className="px-3 py-2 flex items-center gap-3 font-mono text-[10px] bg-[#060101] border-b border-[#1e0606]">
+            <span
+              className="w-[4px] h-[4px] rounded-full bg-[#ff4444]"
+              style={{ boxShadow: '0 0 6px rgba(255,68,68,0.5)', animation: 'status-pulse 1.5s ease-in-out infinite' }}
+            />
+            <span className="text-crt-dim opacity-50 uppercase tracking-[0.15em]">
+              {loadProgress.message || 'scanning network...'}
+            </span>
+            <span className="text-crt-dim opacity-20 ml-auto tracking-widest text-[9px]">
+              phase 1
+            </span>
           </div>
         </div>
       )}
 
       {/* Inline error banner with retry */}
       {loadingState === 'error' && (
-        <div className="shrink-0 px-3 py-2 flex items-center gap-3 font-mono text-[10px] bg-[#0a0202] border-b border-[#1e0606]">
-          <span className="text-crt-accent-bright">error: {error}</span>
+        <div className="shrink-0 px-3 py-2 flex items-center gap-3 font-mono text-[11px] bg-[#0a0202] border-b border-[#1e0606]">
+          <span
+            className="w-[4px] h-[4px] rounded-full bg-[#ff4444]"
+            style={{ boxShadow: '0 0 6px rgba(255,68,68,0.5)' }}
+          />
+          <span className="text-crt-accent-bright">signal lost: {error}</span>
           <button
             onClick={manualRefresh}
-            className="hud-cmd-btn text-[9px] px-2 py-0.5"
+            className="hud-cmd-btn text-[10px] px-2.5 py-1"
             style={{ boxShadow: '0 0 6px rgba(52,211,153,0.1)' }}
           >
-            retry
+            reconnect
           </button>
         </div>
       )}
@@ -60,16 +83,17 @@ export default function NetworkArena() {
         refreshCooldown={refreshCooldown}
       />
 
-      {/* Tactical viewport */}
-      <div className="flex-1 min-h-0 relative hud-viewport hud-scanlines">
-        <HoldingsGraph />
-        <AgentDetailPanel />
-        {/* Scanline overlay as a div — pointer-events:none so SVG stays interactive */}
-        <div className="hud-scanline-overlay" />
-      </div>
+      {/* Main content — graph left, feed right */}
+      <div className="flex-1 min-h-0 flex">
+        {/* Tactical viewport */}
+        <div className="flex-1 min-h-0 relative hud-viewport hud-scanlines">
+          <HoldingsGraph />
+          <div className="hud-scanline-overlay" />
+        </div>
 
-      {/* Agent comms — memo feed */}
-      <SwapFeed />
+        {/* Right sidebar — swaps between feed and agent detail */}
+        <SidePanel />
+      </div>
 
       {/* Event log — bottom console bar */}
       <SwapTicker />

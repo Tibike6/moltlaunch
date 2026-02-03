@@ -1,67 +1,69 @@
 import { useMemo } from 'react';
 import { useNetworkStore } from '../stores/networkStore';
-import { truncateAddress } from '../lib/formatters';
+import { useTokenStore } from '../stores/tokenStore';
+import { truncateAddress, formatEthUsd } from '../lib/formatters';
 import { FLAUNCH_URL } from '../lib/constants';
 import type { SwapEvent } from '@moltlaunch/shared';
 
 const BASESCAN_TX = 'https://basescan.org/tx';
 
-/** Agent Comms — narrative feed of agent reasoning behind trades */
 export default function SwapFeed() {
   const swaps = useNetworkStore((s) => s.swaps);
   const agents = useNetworkStore((s) => s.agents);
   const refreshing = useNetworkStore((s) => s.refreshing);
+  const ethUsdPrice = useTokenStore((s) => s.ethUsdPrice);
+  const setSelectedAgent = useNetworkStore((s) => s.setSelectedAgent);
 
-  // Build maker -> agent image lookup
-  const makerImageMap = useMemo(() => {
-    const map = new Map<string, string>();
+  const makerAgentMap = useMemo(() => {
+    const map = new Map<string, { image: string; name: string; tokenAddress: string }>();
     for (const a of agents) {
-      if (a.creator && a.image) {
-        map.set(a.creator.toLowerCase(), a.image);
-      }
+      if (a.creator) map.set(a.creator.toLowerCase(), { image: a.image, name: a.name, tokenAddress: a.tokenAddress });
     }
     return map;
   }, [agents]);
 
-  const comms = useMemo(
+  const tokenAgentMap = useMemo(() => {
+    const map = new Map<string, { image: string; name: string; symbol: string }>();
+    for (const a of agents) {
+      map.set(a.tokenAddress.toLowerCase(), { image: a.image, name: a.name, symbol: a.symbol });
+    }
+    return map;
+  }, [agents]);
+
+  const feed = useMemo(
     () => swaps.filter((s) => s.memo).slice(0, 50),
     [swaps],
   );
 
-  const count = comms.length;
-
   return (
-    <div className="shrink-0 hud-panel border-t border-[#1e0606]">
-      {/* Section header */}
-      <div className="flex items-center gap-2 px-3 py-2 border-b border-[#0e0404]">
-        <div className="hud-section-tab mb-0">
-          agent comms
-          {count > 0 && (
-            <span className="text-crt-green opacity-50 ml-1 tracking-normal normal-case text-[9px]">
-              {count}
-            </span>
-          )}
-        </div>
+    <div className="flex flex-col flex-1 min-h-0">
+      {/* Header */}
+      <div className="flex items-center gap-2 px-4 py-2.5 border-b border-[#0e0404]">
+        <span
+          className="w-[5px] h-[5px] rounded-full bg-crt-green shrink-0"
+          style={{ boxShadow: '0 0 4px rgba(52,211,153,0.5)', animation: 'status-pulse 1.5s ease-in-out infinite' }}
+        />
+        <span className="font-mono text-[13px] text-crt-dim uppercase tracking-[0.15em] opacity-50">Onchain Social Feed</span>
+        {feed.length > 0 && (
+          <span className="font-mono text-[13px] text-crt-dim opacity-25">{feed.length}</span>
+        )}
       </div>
 
-      {/* Feed body — always visible */}
-      {count === 0 && (
-        <div className="px-4 py-4 font-mono text-[10px] text-crt-dim opacity-30">
-          {refreshing ? (
-            <span className="animate-pulse">intercepting agent transmissions...</span>
-          ) : (
-            'no agent comms detected'
-          )}
+      {/* Feed content — scrollable */}
+      {feed.length === 0 ? (
+        <div className="flex-1 flex items-center justify-center font-mono text-[14px] text-crt-dim opacity-25">
+          {refreshing ? 'scanning...' : 'no memos yet'}
         </div>
-      )}
-
-      {count > 0 && (
-        <div className="max-h-[220px] overflow-y-auto detail-panel-scroll">
-          {comms.map((swap, i) => (
-            <CommsEntry
+      ) : (
+        <div className="flex-1 overflow-y-auto detail-panel-scroll">
+          {feed.map((swap, i) => (
+            <FeedEntry
               key={`${swap.transactionHash}-${i}`}
               swap={swap}
-              agentImage={makerImageMap.get(swap.maker.toLowerCase()) ?? null}
+              makerAgent={makerAgentMap.get(swap.maker.toLowerCase()) ?? null}
+              tokenAgent={tokenAgentMap.get(swap.tokenAddress.toLowerCase()) ?? null}
+              ethUsdPrice={ethUsdPrice}
+              onSelectAgent={setSelectedAgent}
             />
           ))}
         </div>
@@ -70,111 +72,104 @@ export default function SwapFeed() {
   );
 }
 
-function CommsEntry({ swap, agentImage }: { swap: SwapEvent; agentImage: string | null }) {
-  const time = new Date(swap.timestamp * 1000);
-  const timeStr = `${time.getHours().toString().padStart(2, '0')}:${time.getMinutes().toString().padStart(2, '0')}`;
+function FeedEntry({ swap, makerAgent, tokenAgent, ethUsdPrice, onSelectAgent }: {
+  swap: SwapEvent;
+  makerAgent: { image: string; name: string; tokenAddress: string } | null;
+  tokenAgent: { image: string; name: string; symbol: string } | null;
+  ethUsdPrice: number;
+  onSelectAgent: (addr: string) => void;
+}) {
+  const diffMs = Date.now() - swap.timestamp * 1000;
+  const timeStr = diffMs < 60_000 ? 'now' : diffMs < 3600_000 ? `${Math.floor(diffMs / 60_000)}m` : diffMs < 86400_000 ? `${Math.floor(diffMs / 3600_000)}h` : new Date(swap.timestamp * 1000).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
 
   const isBuy = swap.type === 'buy';
   const maker = swap.makerName ?? truncateAddress(swap.maker);
-  const ethStr = swap.amountETH > 0 ? swap.amountETH.toFixed(4) : '0';
-  const isCross = swap.isCrossTrade;
-
-  const actionColor = isBuy ? 'text-crt-green' : 'text-[#ff4444]';
-  const actionGlow = isBuy ? 'rgba(52,211,153,0.3)' : 'rgba(255,68,68,0.3)';
+  const amt = formatEthUsd(swap.amountETH, ethUsdPrice);
 
   return (
-    <div className="group flex gap-2.5 px-3 py-2.5 border-b border-[#0a0303] last:border-0 hover:bg-[#0a0404] transition-colors">
-      {/* Agent avatar */}
-      <div className="shrink-0 mt-0.5">
-        {agentImage ? (
-          <img
-            src={agentImage}
-            alt=""
-            className="w-7 h-7 border border-[#1e0606]"
-            style={{ imageRendering: 'pixelated' }}
-          />
+    <div className="group flex gap-3 px-4 py-3 border-b border-[#080303] last:border-0 hover:bg-[#0a0404] transition-colors font-mono">
+      {/* Maker avatar */}
+      <div className="shrink-0 pt-0.5">
+        {makerAgent ? (
+          <button onClick={() => onSelectAgent(makerAgent.tokenAddress)} className="cursor-pointer">
+            <MiniAvatar src={makerAgent.image} size={42} />
+          </button>
         ) : (
-          <div className="w-7 h-7 border border-[#1e0606] bg-[#0a0303] flex items-center justify-center text-crt-dim text-[8px]">
-            ?
-          </div>
+          <MiniAvatar fallback={maker.slice(0, 1)} size={42} />
         )}
       </div>
 
       {/* Content */}
-      <div className="flex-1 min-w-0 font-mono">
-        {/* Agent name + action + meta */}
-        <div className="flex items-center gap-1.5 text-[10px] leading-tight">
-          {/* Agent name — clickable if they have a token */}
-          {swap.makerTokenAddress ? (
-            <a
-              href={`${FLAUNCH_URL}/coin/${swap.makerTokenAddress}`}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="text-crt-text font-medium truncate max-w-[140px] hover:text-[#ff4444] transition-colors"
+      <div className="flex-1 min-w-0">
+        {/* Name + time */}
+        <div className="flex items-baseline gap-1.5 leading-tight">
+          {makerAgent ? (
+            <button
+              onClick={() => onSelectAgent(makerAgent.tokenAddress)}
+              className="text-[15px] font-bold text-white hover:underline cursor-pointer truncate max-w-[140px]"
             >
               {maker}
-            </a>
+            </button>
           ) : (
-            <span className="text-crt-text truncate max-w-[140px]">{maker}</span>
+            <span className="text-[15px] font-bold text-white opacity-60 truncate max-w-[140px]">{maker}</span>
           )}
+          <span className="text-[13px] text-[#444]">&middot;</span>
+          <span className="text-[13px] text-[#444]">{timeStr}</span>
+        </div>
 
-          <span
-            className={`${actionColor} shrink-0`}
-            style={{ textShadow: `0 0 4px ${actionGlow}` }}
-          >
+        {/* Action: bought/sold TOKEN */}
+        <div className="flex items-center gap-1.5 mt-0.5">
+          <span className={`text-[14px] ${isBuy ? 'text-crt-green' : 'text-[#ff4444]'}`}>
             {isBuy ? 'bought' : 'sold'}
           </span>
-
+          {tokenAgent && (
+            <button onClick={() => onSelectAgent(swap.tokenAddress)} className="cursor-pointer">
+              <MiniAvatar src={tokenAgent.image} size={20} />
+            </button>
+          )}
           <a
             href={`${FLAUNCH_URL}/coin/${swap.tokenAddress}`}
             target="_blank"
             rel="noopener noreferrer"
-            className="text-crt-text opacity-60 hover:opacity-100 transition-opacity truncate"
+            className="text-[14px] text-white opacity-70 hover:opacity-100 hover:underline transition-opacity"
           >
             {swap.tokenSymbol}
           </a>
-
-          {/* Badges */}
-          {swap.isAgentSwap && !isCross && (
-            <span
-              className="text-[8px] text-[#38bdf8] px-1 border border-[#38bdf820] shrink-0"
-              style={{ textShadow: '0 0 4px rgba(56,189,248,0.2)' }}
-            >
-              agent
-            </span>
-          )}
-          {isCross && (
-            <span
-              className="text-[8px] text-[#a78bfa] px-1 border border-[#a78bfa20] shrink-0"
-              style={{ textShadow: '0 0 4px rgba(167,139,250,0.2)' }}
-            >
-              cross
-            </span>
-          )}
-
-          {/* Right-aligned meta */}
-          <span className="ml-auto flex items-center gap-1.5 shrink-0 text-crt-dim opacity-30">
-            <span className="text-[9px]">{ethStr} ETH</span>
-            <span className="text-[9px]">{timeStr}</span>
-            <a
-              href={`${BASESCAN_TX}/${swap.transactionHash}`}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="text-[8px] opacity-50 hover:opacity-100 hover:text-[#ff4444] transition-all"
-              title="View on Basescan"
-            >
-              tx&#8599;
-            </a>
-          </span>
+          <span className="text-[13px] text-[#555]">{amt}</span>
         </div>
 
-        {/* Memo — the main content, displayed prominently */}
-        <div
-          className="mt-1 text-[11px] text-crt-text opacity-60 leading-relaxed group-hover:opacity-90 transition-opacity"
-        >
+        {/* Memo */}
+        <div className="text-[16px] text-[#ccc] leading-relaxed mt-1.5 group-hover:text-white transition-colors">
           {swap.memo}
         </div>
+
+        {/* Tx link on hover */}
+        <div className="flex items-center gap-3 mt-1 opacity-0 group-hover:opacity-100 transition-opacity">
+          <a
+            href={`${BASESCAN_TX}/${swap.transactionHash}`}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="text-[12px] text-[#555] hover:text-white transition-colors"
+          >
+            view tx ↗
+          </a>
+        </div>
       </div>
+    </div>
+  );
+}
+
+function MiniAvatar({ src, fallback, size = 18 }: { src?: string; fallback?: string; size?: number }) {
+  return (
+    <div
+      className="rounded-full overflow-hidden bg-[#0a0303] shrink-0 border border-[#1a0808]"
+      style={{ width: size, height: size }}
+    >
+      {src ? (
+        <img src={src} alt="" className="w-full h-full" style={{ imageRendering: 'pixelated' }} />
+      ) : (
+        <div className="w-full h-full flex items-center justify-center text-[8px] text-[#444]">{fallback ?? '?'}</div>
+      )}
     </div>
   );
 }

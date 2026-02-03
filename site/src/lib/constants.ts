@@ -13,3 +13,4 @@ export {
 export const PER_PAGE = 20;
 export const TOKENS_PER_PAGE = 100;
 export const SWAP_POLL_INTERVAL = 60_000;
+export const FULL_REFRESH_INTERVAL = 120_000;

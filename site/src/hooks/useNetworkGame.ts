@@ -6,11 +6,12 @@ const REFRESH_COOLDOWN_MS = 10_000;
 
 /** Orchestrates game data: fetches from worker, syncs to store */
 export function useNetworkGame() {
-  const { agents, swaps, crossEdges, loading, error } = useNetwork();
+  const { agents, swaps, crossEdges, loading, error, refetch } = useNetwork();
   const setAgents = useNetworkStore((s) => s.setAgents);
   const setSwaps = useNetworkStore((s) => s.setSwaps);
   const setCrossEdges = useNetworkStore((s) => s.setCrossEdges);
   const setLastRefresh = useNetworkStore((s) => s.setLastRefresh);
+  const setRefreshing = useNetworkStore((s) => s.setRefreshing);
 
   const storeAgents = useNetworkStore((s) => s.agents);
   const storeSwaps = useNetworkStore((s) => s.swaps);
@@ -32,21 +33,25 @@ export function useNetworkGame() {
     if (crossEdges.length > 0) setCrossEdges(crossEdges);
   }, [crossEdges, setCrossEdges]);
 
-  // Manual refresh: re-fetch full state from worker
+  // Manual refresh: re-fetch full state without page reload
   const [canRefresh, setCanRefresh] = useState(true);
   const [refreshCooldown, setRefreshCooldown] = useState(0);
-  const [refreshing, setRefreshing] = useState(false);
+  const [refreshing, setRefreshingLocal] = useState(false);
   const cooldownRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
-  const manualRefresh = useCallback(() => {
+  const manualRefresh = useCallback(async () => {
     if (!canRefresh || refreshing) return;
     setCanRefresh(false);
     setRefreshCooldown(REFRESH_COOLDOWN_MS / 1000);
+    setRefreshingLocal(true);
     setRefreshing(true);
 
-    // Trigger a full re-fetch by forcing window-level reload of network state
-    // The useNetwork hook handles the actual fetch
-    window.location.reload();
+    try {
+      await refetch();
+    } finally {
+      setRefreshingLocal(false);
+      setRefreshing(false);
+    }
 
     cooldownRef.current = setInterval(() => {
       setRefreshCooldown((prev) => {
@@ -59,7 +64,7 @@ export function useNetworkGame() {
         return prev - 1;
       });
     }, 1000);
-  }, [canRefresh, refreshing]);
+  }, [canRefresh, refreshing, refetch, setRefreshing]);
 
   useEffect(() => {
     return () => {

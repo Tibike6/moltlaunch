@@ -1,5 +1,5 @@
-import { useState, useEffect } from 'react';
-import { NETWORK_API, SWAP_POLL_INTERVAL } from '../lib/constants';
+import { useState, useEffect, useCallback } from 'react';
+import { NETWORK_API, SWAP_POLL_INTERVAL, FULL_REFRESH_INTERVAL } from '../lib/constants';
 import type {
   NetworkAgent as Agent,
   SwapEvent,
@@ -17,15 +17,17 @@ export function useNetwork() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
+  const fetchFullState = useCallback(async () => {
+    const r = await fetch(`${NETWORK_API}/api/network`);
+    if (!r.ok) throw new Error(`HTTP ${r.status}`);
+    return r.json() as Promise<NetworkState>;
+  }, []);
+
   // Mount: fetch full state
   useEffect(() => {
     let cancelled = false;
 
-    fetch(`${NETWORK_API}/api/network`)
-      .then((r) => {
-        if (!r.ok) throw new Error(`HTTP ${r.status}`);
-        return r.json() as Promise<NetworkState>;
-      })
+    fetchFullState()
       .then((data) => {
         if (!cancelled) setState(data);
       })
@@ -37,7 +39,23 @@ export function useNetwork() {
       });
 
     return () => { cancelled = true; };
-  }, []);
+  }, [fetchFullState]);
+
+  // Poll: full state refresh every 120s (matches worker cron)
+  useEffect(() => {
+    if (!state) return;
+
+    const id = setInterval(async () => {
+      try {
+        const data = await fetchFullState();
+        setState(data);
+      } catch {
+        // ignore polling errors — will retry next cycle
+      }
+    }, FULL_REFRESH_INTERVAL);
+
+    return () => clearInterval(id);
+  }, [state !== null, fetchFullState]);
 
   // Poll: incremental swaps every 60s
   useEffect(() => {
@@ -66,6 +84,16 @@ export function useNetwork() {
     return () => clearInterval(id);
   }, [state?.timestamp]);
 
+  // Manual refetch — re-fetches full state without reloading the page
+  const refetch = useCallback(async () => {
+    try {
+      const data = await fetchFullState();
+      setState(data);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    }
+  }, [fetchFullState]);
+
   return {
     agents: state?.agents ?? [],
     swaps: state?.swaps ?? [],
@@ -73,5 +101,6 @@ export function useNetwork() {
     timestamp: state?.timestamp ?? null,
     loading,
     error,
+    refetch,
   };
 }

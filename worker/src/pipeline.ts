@@ -12,6 +12,7 @@ import type {
 import { fetchTokens, fetchTokenDetails, fetchHolders, fetchSwaps, batchedFetch } from './flaunch';
 import { batchReadBalances, batchFetchMemos, fetchWalletSwaps } from './rpc';
 import { computePowerScore } from './scoring';
+import { resolveBanners } from './banners';
 
 const MIN_HOLDERS = 5;
 const WHALE_ETH = 0.1; // only include non-agent swaps above this size
@@ -315,6 +316,9 @@ async function executePipeline(env: Env): Promise<void> {
   const scoredAgents = allAgents
     .map((a) => ({ ...a, powerScore: computePowerScore(a) }))
     .sort((a, b) => b.powerScore.total - a.powerScore.total);
+
+  // 9. Resolve banner images (cached in KV, generates missing ones via fal.ai)
+  await resolveBanners(env, scoredAgents);
 
   // Store in KV
   const state: NetworkState = {

@@ -23,4 +23,5 @@ export interface Env {
   RM_ADDRESS: string;
   MEMO_MAGIC_PREFIX: string;
   FLAUNCH_URL: string;
+  FAL_KEY: string;
 }

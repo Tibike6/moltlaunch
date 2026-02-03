@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
-import { useNetworkStore, type SwapAnimation } from '../stores/networkStore';
+import { useNetworkStore, type SwapAnimation, type DeltaAnimation } from '../stores/networkStore';
 import type { NetworkAgent as Agent, CrossHoldingEdge, SwapEvent } from '@moltlaunch/shared';
 
 interface GraphNode {
@@ -24,8 +24,8 @@ interface GraphEdge {
 }
 
 // Simulation constants
-const NODE_MIN_R = 10;
-const NODE_MAX_R = 36;
+const NODE_MIN_R = 14;
+const NODE_MAX_R = 48;
 const SPRING_LENGTH = 120;
 const SPRING_K = 0.004;
 const REPULSION = 5000;
@@ -37,7 +37,12 @@ const OUTER_RING_PADDING = 60;
 const MAX_SIM_TIME = 10_000; // 10s max simulation
 const TAP_PULSE_MS = 300;
 const MOBILE_BREAKPOINT = 768;
-const MOBILE_MIN_R = 16;
+const MOBILE_MIN_R = 20;
+
+const DELTA_ANIM_DURATION = 5000;
+const DELTA_LABEL_DURATION = 4000;
+const TOAST_DURATION = 6000;
+const MAX_TOASTS = 5;
 
 function scoreColor(score: number): string {
   if (score >= 75) return '#34d399';
@@ -51,12 +56,19 @@ function getMinRadius(): number {
   return window.innerWidth <= MOBILE_BREAKPOINT ? MOBILE_MIN_R : NODE_MIN_R;
 }
 
+// Power-based radius instead of mcap-based
+function nodeRadius(powerScore: number, minR: number): number {
+  return Math.max(minR, NODE_MIN_R + (powerScore / 100) * (NODE_MAX_R - NODE_MIN_R));
+}
+
 export default function HoldingsGraph() {
   const agents = useNetworkStore((s) => s.agents);
   const crossEdges = useNetworkStore((s) => s.crossEdges);
   const swaps = useNetworkStore((s) => s.swaps);
   const animationQueue = useNetworkStore((s) => s.animationQueue);
   const recentlyActiveNodes = useNetworkStore((s) => s.recentlyActiveNodes);
+  const deltaAnimations = useNetworkStore((s) => s.deltaAnimations);
+  const changeFeed = useNetworkStore((s) => s.changeFeed);
   const expireAnimations = useNetworkStore((s) => s.expireAnimations);
   const setSelectedAgent = useNetworkStore((s) => s.setSelectedAgent);
 
@@ -246,9 +258,6 @@ export default function HoldingsGraph() {
         edgeWeights.set(edgeKey, (edgeWeights.get(edgeKey) ?? 0) + 1);
       }
 
-      // Only show edges from verified cross-holdings and cross-trades
-      // (removed: shared-trader edges were too noisy — random wallets trading 2+ tokens aren't meaningful)
-
       const seenEdgeKeys = new Set<string>();
       for (const [edgeKey, weight] of edgeWeights) {
         if (seenEdgeKeys.has(edgeKey)) continue;
@@ -398,9 +407,11 @@ export default function HoldingsGraph() {
     };
   }, [agents, crossEdges, swaps, W, H, buildGraph, startSimulation]);
 
-  // Animation tick for swap animations — only runs when animations exist
+
+  // Animation tick for swap animations + delta animations — only runs when animations exist
+  const hasDeltaAnims = deltaAnimations.size > 0;
   useEffect(() => {
-    if (animationQueue.length === 0) return;
+    if (animationQueue.length === 0 && !hasDeltaAnims) return;
 
     let frameId: number;
     let lastExpire = Date.now();
@@ -417,15 +428,10 @@ export default function HoldingsGraph() {
 
     frameId = requestAnimationFrame(tick);
     return () => cancelAnimationFrame(frameId);
-  }, [animationQueue.length > 0]); // eslint-disable-line -- only toggle on empty/non-empty
+  }, [animationQueue.length > 0, hasDeltaAnims]); // eslint-disable-line -- only toggle on empty/non-empty
 
   const nodes = nodesRef.current;
   const edges = edgesRef.current;
-
-  const maxMcap = useMemo(
-    () => Math.max(...nodes.map((n) => n.mcap), 0.01),
-    [renderTick], // eslint-disable-line
-  );
 
   // Build animation lookup
   const { activeAnims, activeEdgeAnims } = useMemo(() => {
@@ -441,6 +447,18 @@ export default function HoldingsGraph() {
     return { activeAnims: anims, activeEdgeAnims: edgeAnims };
   }, [animationQueue]);
 
+  // Active delta animations (filter expired)
+  const activeDeltaAnims = useMemo(() => {
+    const now = Date.now();
+    const active = new Map<string, DeltaAnimation>();
+    for (const [nodeId, anim] of deltaAnimations) {
+      if (now - anim.startTime < DELTA_ANIM_DURATION) {
+        active.set(nodeId, anim);
+      }
+    }
+    return active;
+  }, [deltaAnimations, renderTick]); // eslint-disable-line -- renderTick drives re-eval
+
   // Recently active nodes from persistent store map (survives animation expiry)
   const recentlyActive = useMemo(() => {
     const now = Date.now();
@@ -450,6 +468,14 @@ export default function HoldingsGraph() {
     }
     return active;
   }, [recentlyActiveNodes, renderTick]); // renderTick ensures re-eval on animation frames
+
+  // Visible toasts from changeFeed
+  const visibleToasts = useMemo(() => {
+    const now = Date.now();
+    return changeFeed
+      .filter((e) => now - e.timestamp < TOAST_DURATION)
+      .slice(0, MAX_TOASTS);
+  }, [changeFeed, renderTick]); // eslint-disable-line
 
   if (nodes.length === 0) {
     return (
@@ -475,7 +501,7 @@ export default function HoldingsGraph() {
         <defs>
           {/* Clip paths for agent images */}
           {nodes.map((node) => {
-            const r = Math.max(minR, NODE_MIN_R + Math.sqrt(node.mcap / maxMcap) * (NODE_MAX_R - NODE_MIN_R));
+            const r = nodeRadius(node.powerScore, minR);
             return (
               <clipPath key={`clip-${node.id}`} id={`clip-${node.id.slice(-8)}`}>
                 <circle cx={node.x} cy={node.y} r={r - 1} />
@@ -492,15 +518,48 @@ export default function HoldingsGraph() {
             </feMerge>
           </filter>
 
+          {/* Delta gain glow (green) */}
+          <filter id="deltaGainGlow">
+            <feGaussianBlur stdDeviation="6" result="blur" />
+            <feFlood floodColor="#34d399" floodOpacity="0.4" result="color" />
+            <feComposite in="color" in2="blur" operator="in" result="colorBlur" />
+            <feMerge>
+              <feMergeNode in="colorBlur" />
+              <feMergeNode in="SourceGraphic" />
+            </feMerge>
+          </filter>
+
+          {/* Delta loss glow (red) */}
+          <filter id="deltaLossGlow">
+            <feGaussianBlur stdDeviation="6" result="blur" />
+            <feFlood floodColor="#ef4444" floodOpacity="0.4" result="color" />
+            <feComposite in="color" in2="blur" operator="in" result="colorBlur" />
+            <feMerge>
+              <feMergeNode in="colorBlur" />
+              <feMergeNode in="SourceGraphic" />
+            </feMerge>
+          </filter>
+
+          {/* New agent materialize glow */}
+          <filter id="newAgentGlow">
+            <feGaussianBlur stdDeviation="8" result="blur" />
+            <feFlood floodColor="#a78bfa" floodOpacity="0.5" result="color" />
+            <feComposite in="color" in2="blur" operator="in" result="colorBlur" />
+            <feMerge>
+              <feMergeNode in="colorBlur" />
+              <feMergeNode in="SourceGraphic" />
+            </feMerge>
+          </filter>
+
           {/* Arrowhead marker for cross-trade edge direction */}
           <marker id="arrowhead" viewBox="0 0 10 7" refX="10" refY="3.5"
                   markerWidth="6" markerHeight="5" orient="auto-start-reverse">
             <polygon points="0 0, 10 3.5, 0 7" fill="#a78bfa" opacity="0.5" />
           </marker>
 
-          {/* Glow filter for cross-trade edges */}
+          {/* Glow filter for cross-trade edges — wider for more drama */}
           <filter id="edgeGlow">
-            <feGaussianBlur stdDeviation="2" result="blur" />
+            <feGaussianBlur stdDeviation="3.5" result="blur" />
             <feMerge>
               <feMergeNode in="blur" />
               <feMergeNode in="SourceGraphic" />
@@ -535,21 +594,6 @@ export default function HoldingsGraph() {
         {/* Center glow */}
         <rect width={W} height={H} fill="url(#centerGlow)" pointerEvents="none" />
 
-        {/* Radar range rings */}
-        {[0.2, 0.4, 0.6].map((pct, i) => (
-          <circle
-            key={`ring-${i}`}
-            cx={W / 2}
-            cy={H / 2}
-            r={Math.min(W, H) * pct}
-            fill="none"
-            stroke="#1e0606"
-            strokeWidth="0.5"
-            opacity="0.3"
-            pointerEvents="none"
-          />
-        ))}
-
         {/* Edges */}
         {edges.map((edge, i) => {
           const a = nodes.find((n) => n.id === edge.source);
@@ -560,29 +604,79 @@ export default function HoldingsGraph() {
           const edgeKey = [edge.source, edge.target].sort().join('-');
           const isAnimated = activeEdgeAnims.has(edgeKey);
 
-          const baseWidth = Math.max(1, Math.log2(edge.weight + 1) * 1.5);
+          const baseWidth = Math.max(1.5, Math.log2(edge.weight + 1) * 2);
+
+          // Edge midpoint for hover label
+          const mx = (a.x + b.x) / 2;
+          const my = (a.y + b.y) / 2;
 
           return (
-            <line
-              key={i}
-              x1={a.x}
-              y1={a.y}
-              x2={b.x}
-              y2={b.y}
-              stroke={isAnimated || isHovered ? '#a78bfa' : '#1e0606'}
-              strokeWidth={isAnimated ? baseWidth + 0.5 : baseWidth}
-              opacity={isAnimated ? 0.9 : isHovered ? 0.7 : 0.35}
-              strokeDasharray={isAnimated ? '6 4' : 'none'}
-              className={isAnimated ? 'dash-flow' : undefined}
-              filter={isAnimated ? 'url(#edgeGlow)' : undefined}
-              markerEnd={isAnimated ? 'url(#arrowhead)' : undefined}
-            />
+            <g key={i}>
+              <line
+                x1={a.x}
+                y1={a.y}
+                x2={b.x}
+                y2={b.y}
+                stroke={isAnimated || isHovered ? '#a78bfa' : '#1e0606'}
+                strokeWidth={isAnimated ? baseWidth + 1 : baseWidth}
+                opacity={isAnimated ? 0.9 : isHovered ? 0.7 : 0.5}
+                strokeDasharray={isAnimated ? '6 4' : 'none'}
+                className={isAnimated ? 'dash-flow' : undefined}
+                filter={isAnimated ? 'url(#edgeGlow)' : undefined}
+                markerEnd={isAnimated ? 'url(#arrowhead)' : undefined}
+              />
+
+              {/* Directional flow particles during cross-trade animations */}
+              {isAnimated && (
+                <>
+                  {[0, 1, 2].map((particleIdx) => {
+                    const dx = b.x - a.x;
+                    const dy = b.y - a.y;
+                    const len = Math.sqrt(dx * dx + dy * dy);
+                    if (len < 1) return null;
+                    // Stagger particles along the path
+                    const now = Date.now();
+                    const speed = 2000; // ms per full traversal
+                    const offset = particleIdx / 3;
+                    const t = ((now / speed + offset) % 1);
+                    const px = a.x + dx * t;
+                    const py = a.y + dy * t;
+                    return (
+                      <circle
+                        key={`particle-${i}-${particleIdx}`}
+                        cx={px}
+                        cy={py}
+                        r={2.5}
+                        fill="#a78bfa"
+                        opacity={0.7 * (1 - Math.abs(t - 0.5) * 2)}
+                      />
+                    );
+                  })}
+                </>
+              )}
+
+              {/* Edge weight label on hover */}
+              {isHovered && edge.weight > 0 && (
+                <text
+                  x={mx}
+                  y={my - 6}
+                  textAnchor="middle"
+                  fill="#a78bfa"
+                  fontSize="12"
+                  fontFamily="monospace"
+                  opacity={0.7}
+                  pointerEvents="none"
+                >
+                  {edge.weight} link{edge.weight > 1 ? 's' : ''}
+                </text>
+              )}
+            </g>
           );
         })}
 
         {/* Nodes */}
         {nodes.map((node) => {
-          const r = Math.max(minR, NODE_MIN_R + Math.sqrt(node.mcap / maxMcap) * (NODE_MAX_R - NODE_MIN_R));
+          const r = nodeRadius(node.powerScore, minR);
           const color = scoreColor(node.powerScore);
           const isHovered = hoveredNode === node.id;
           const isConnected =
@@ -593,13 +687,31 @@ export default function HoldingsGraph() {
                 (e.target === hoveredNode && e.source === node.id),
             );
           const dimmed = hoveredNode !== null && !isHovered && !isConnected;
-          const opacity = dimmed ? 0.15 : isHovered ? 1 : 0.85;
+          const opacity = dimmed ? 0.2 : isHovered ? 1 : 0.95;
           const anim = activeAnims.get(node.id);
           const isAnimating = !!anim;
           const animProgress = isAnimating
             ? Math.max(0, 1 - (Date.now() - anim.startTime) / 3000)
             : 0;
           const isTapped = tappedNode === node.id;
+
+          // Delta animation state
+          const deltaAnim = activeDeltaAnims.get(node.id);
+          const hasDelta = !!deltaAnim;
+          const deltaProgress = hasDelta
+            ? Math.max(0, 1 - (Date.now() - deltaAnim.startTime) / DELTA_ANIM_DURATION)
+            : 0;
+          const deltaLabelProgress = hasDelta
+            ? Math.max(0, 1 - (Date.now() - deltaAnim.startTime) / DELTA_LABEL_DURATION)
+            : 0;
+
+          // New agent materialize effect
+          const isNewAgent = deltaAnim?.type === 'new';
+          const materializeScale = isNewAgent ? Math.min(1, (Date.now() - deltaAnim.startTime) / 800) : 1;
+          const materializeOpacity = isNewAgent ? Math.min(1, (Date.now() - deltaAnim.startTime) / 600) : 1;
+
+          // Stroke width scales with power score
+          const baseStrokeWidth = 1.5 + (node.powerScore / 100) * 1.5;
 
           return (
             <g
@@ -620,9 +732,38 @@ export default function HoldingsGraph() {
                 if (!didDragRef.current) handleNodeClick(node.id);
               }}
               style={{ cursor: dragNodeRef.current === node.id ? 'grabbing' : 'grab' }}
+              opacity={materializeOpacity}
+              transform={isNewAgent ? `translate(${node.x * (1 - materializeScale)}, ${node.y * (1 - materializeScale)}) scale(${materializeScale})` : undefined}
             >
+              {/* Delta glow ring — gain (green) or loss (red) */}
+              {hasDelta && deltaAnim.type !== 'new' && deltaProgress > 0 && (
+                <circle
+                  cx={node.x}
+                  cy={node.y}
+                  r={r + 8 + (1 - deltaProgress) * 12}
+                  fill="none"
+                  stroke={deltaAnim.type === 'gain' ? '#34d399' : '#ef4444'}
+                  strokeWidth={2.5}
+                  opacity={deltaProgress * 0.6}
+                />
+              )}
+
+              {/* New agent burst glow */}
+              {isNewAgent && deltaProgress > 0 && (
+                <circle
+                  cx={node.x}
+                  cy={node.y}
+                  r={r + 10 + (1 - deltaProgress) * 20}
+                  fill="none"
+                  stroke="#a78bfa"
+                  strokeWidth={3}
+                  opacity={deltaProgress * 0.5}
+                  filter="url(#newAgentGlow)"
+                />
+              )}
+
               {/* Idle breathing ring for connected nodes (gentle ambient pulse) */}
-              {node.connected && !recentlyActive.has(node.id) && !isAnimating && (
+              {node.connected && !recentlyActive.has(node.id) && !isAnimating && !hasDelta && (
                 <circle
                   cx={node.x}
                   cy={node.y}
@@ -704,9 +845,15 @@ export default function HoldingsGraph() {
                 fill={isHovered ? color : '#0a0505'}
                 fillOpacity={isHovered ? 0.15 : 1}
                 stroke={color}
-                strokeWidth={isHovered ? 2.5 : 1.5}
+                strokeWidth={isHovered ? baseStrokeWidth + 1 : baseStrokeWidth}
                 opacity={opacity}
-                filter={isAnimating ? 'url(#nodeGlow)' : undefined}
+                filter={
+                  isAnimating ? 'url(#nodeGlow)'
+                  : hasDelta && deltaAnim.type === 'gain' ? 'url(#deltaGainGlow)'
+                  : hasDelta && deltaAnim.type === 'loss' ? 'url(#deltaLossGlow)'
+                  : hasDelta && deltaAnim.type === 'new' ? 'url(#newAgentGlow)'
+                  : undefined
+                }
               />
 
               {/* Agent image */}
@@ -723,15 +870,43 @@ export default function HoldingsGraph() {
                 />
               )}
 
-              {/* Symbol label below node */}
+              {/* Power score number inside/above node — always visible */}
               <text
                 x={node.x}
-                y={node.y + r + 12}
+                y={node.y - r - 10}
                 textAnchor="middle"
-                fill="#888"
-                fontSize="9"
+                fill={color}
+                fontSize="18"
                 fontFamily="monospace"
-                opacity={dimmed ? 0.15 : 0.6}
+                fontWeight="bold"
+                opacity={dimmed ? 0.1 : 1}
+              >
+                {node.powerScore}
+              </text>
+
+              {/* Agent name — always visible below node */}
+              <text
+                x={node.x}
+                y={node.y + r + 16}
+                textAnchor="middle"
+                fill="#ddd"
+                fontSize="15"
+                fontFamily="monospace"
+                fontWeight="500"
+                opacity={dimmed ? 0.1 : 0.9}
+              >
+                {node.label}
+              </text>
+
+              {/* Symbol below name */}
+              <text
+                x={node.x}
+                y={node.y + r + 30}
+                textAnchor="middle"
+                fill="#999"
+                fontSize="12"
+                fontFamily="monospace"
+                opacity={dimmed ? 0.1 : 0.55}
               >
                 {node.symbol}
               </text>
@@ -749,37 +924,96 @@ export default function HoldingsGraph() {
                 />
               )}
 
-              {/* Hover tooltip: name + score */}
-              {isHovered && (
-                <text
-                  x={node.x}
-                  y={node.y - r - 8}
-                  textAnchor="middle"
-                  fill="#ccc"
-                  fontSize="10"
-                  fontFamily="monospace"
-                >
-                  {node.label} ({node.powerScore})
-                </text>
-              )}
-
               {/* Floating swap label */}
               {isAnimating && (
                 <text
                   x={node.x}
-                  y={node.y - r - 16 - (1 - animProgress) * 20}
+                  y={node.y - r - 24 - (1 - animProgress) * 20}
                   textAnchor="middle"
                   fill={anim.type === 'buy' ? '#34d399' : '#ef4444'}
-                  fontSize="9"
+                  fontSize="12"
                   fontFamily="monospace"
                   opacity={animProgress}
                 >
                   {anim.label}
                 </text>
               )}
+
+              {/* Floating delta score label (+N / -N) — like damage numbers */}
+              {hasDelta && deltaAnim.type !== 'new' && deltaLabelProgress > 0 && (
+                <text
+                  x={node.x + r + 8}
+                  y={node.y - r - 4 - (1 - deltaLabelProgress) * 24}
+                  textAnchor="start"
+                  fill={deltaAnim.type === 'gain' ? '#34d399' : '#ef4444'}
+                  fontSize="15"
+                  fontFamily="monospace"
+                  fontWeight="bold"
+                  opacity={deltaLabelProgress * 0.9}
+                  style={{ textShadow: `0 0 8px ${deltaAnim.type === 'gain' ? '#34d399' : '#ef4444'}60` }}
+                >
+                  {deltaAnim.value > 0 ? '+' : ''}{deltaAnim.value}
+                </text>
+              )}
             </g>
           );
         })}
+
+        {/* On-graph event toasts — top-left overlay */}
+        {visibleToasts.length > 0 && (
+          <g pointerEvents="none">
+            {visibleToasts.map((entry, i) => {
+              const elapsed = Date.now() - entry.timestamp;
+              const fadeIn = Math.min(1, elapsed / 300);
+              const fadeOut = Math.max(0, 1 - (elapsed - TOAST_DURATION * 0.7) / (TOAST_DURATION * 0.3));
+              const toastOpacity = Math.min(fadeIn, fadeOut);
+
+              const toastY = 16 + i * 22;
+              const toastX = 16;
+
+              const icon = entry.type === 'rank' ? '\u2191' : entry.type === 'mcap' ? '\u25C6' : entry.type === 'new' ? '+' : '\u2193';
+              const iconColor = entry.type === 'rank' || entry.type === 'mcap' ? '#34d399' : entry.type === 'new' ? '#a78bfa' : '#ef4444';
+
+              return (
+                <g key={entry.id} opacity={toastOpacity}>
+                  {/* Toast background */}
+                  <rect
+                    x={toastX}
+                    y={toastY}
+                    width={Math.min(280, W - 32)}
+                    height={18}
+                    rx={2}
+                    fill="#0a0505"
+                    fillOpacity={0.85}
+                    stroke="#1e0606"
+                    strokeWidth={0.5}
+                  />
+                  {/* Icon */}
+                  <text
+                    x={toastX + 8}
+                    y={toastY + 13}
+                    fill={iconColor}
+                    fontSize="13"
+                    fontFamily="monospace"
+                    style={{ textShadow: `0 0 4px ${iconColor}` }}
+                  >
+                    {icon}
+                  </text>
+                  {/* Text */}
+                  <text
+                    x={toastX + 22}
+                    y={toastY + 13}
+                    fill="#aaa"
+                    fontSize="12"
+                    fontFamily="monospace"
+                  >
+                    {entry.text.length > 35 ? entry.text.slice(0, 35) + '...' : entry.text}
+                  </text>
+                </g>
+              );
+            })}
+          </g>
+        )}
       </svg>
     </div>
   );

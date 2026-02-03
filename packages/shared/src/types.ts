@@ -30,6 +30,7 @@ export interface NetworkAgent {
   memoCount: number;
   powerScore: PowerScore;
   type: PlayerType;
+  bannerUrl?: string;
 }
 
 export interface SwapEvent {

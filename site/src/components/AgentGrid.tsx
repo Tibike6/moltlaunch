@@ -1,16 +1,63 @@
+import { useMemo } from 'react';
 import { useNetworkGame } from '../hooks/useNetworkGame';
 import { useNetworkStore } from '../stores/networkStore';
+import type { AgentDelta } from '../stores/networkStore';
 import type { NetworkAgent as Agent, PowerScore } from '@moltlaunch/shared';
 import { formatMcap, formatVol } from '../lib/formatters';
-import { useTokenStore } from '../stores/tokenStore';
+import { useEthPrice } from '../hooks/useEthPrice';
+import AgentDetailPanel from './AgentDetailPanel';
 
 type SortKey = 'power' | 'mcap' | 'vol' | 'holders' | 'name';
 
 export default function AgentGrid() {
   const { agents, loading, error, refreshing, lastRefresh } = useNetworkGame();
-  const ethUsdPrice = useTokenStore((s) => s.ethUsdPrice);
+  const ethUsdPrice = useEthPrice();
   const sortBy = useNetworkStore((s) => s.sortBy);
   const setSortBy = useNetworkStore((s) => s.setSortBy);
+  const agentDeltas = useNetworkStore((s) => s.agentDeltas);
+  const selectedAgent = useNetworkStore((s) => s.selectedAgent);
+  const setSelectedAgent = useNetworkStore((s) => s.setSelectedAgent);
+  const filterType = useNetworkStore((s) => s.filterType);
+  const setFilterType = useNetworkStore((s) => s.setFilterType);
+  const filterPower = useNetworkStore((s) => s.filterPower);
+  const setFilterPower = useNetworkStore((s) => s.setFilterPower);
+  const filterActivity = useNetworkStore((s) => s.filterActivity);
+  const setFilterActivity = useNetworkStore((s) => s.setFilterActivity);
+  const searchQuery = useNetworkStore((s) => s.searchQuery);
+  const setSearchQuery = useNetworkStore((s) => s.setSearchQuery);
+
+  const filtered = useMemo(() => {
+    let result = agents;
+
+    // Type filter
+    if (filterType !== 'all') {
+      result = result.filter((a) =>
+        filterType === 'agents' ? a.type === 'agent' : a.type === 'human',
+      );
+    }
+
+    // Power tier filter
+    if (filterPower === '50+') {
+      result = result.filter((a) => a.powerScore.total >= 50);
+    } else if (filterPower === '75+') {
+      result = result.filter((a) => a.powerScore.total >= 75);
+    }
+
+    // Activity filter
+    if (filterActivity === 'active') {
+      result = result.filter((a) => a.recentSwaps >= 5);
+    }
+
+    // Search filter
+    if (searchQuery.trim()) {
+      const q = searchQuery.trim().toLowerCase();
+      result = result.filter(
+        (a) => a.name.toLowerCase().includes(q) || a.symbol.toLowerCase().includes(q),
+      );
+    }
+
+    return result;
+  }, [agents, filterType, filterPower, filterActivity, searchQuery]);
 
   if (error) {
     return (
@@ -28,7 +75,7 @@ export default function AgentGrid() {
     );
   }
 
-  const sorted = [...agents].sort((a, b) => {
+  const sorted = [...filtered].sort((a, b) => {
     switch (sortBy) {
       case 'power': return b.powerScore.total - a.powerScore.total;
       case 'vol': return b.volume24hETH - a.volume24hETH;
@@ -39,15 +86,20 @@ export default function AgentGrid() {
     }
   });
 
-  const totalVol = agents.reduce((s, a) => s + a.volume24hETH, 0);
-  const totalMcap = agents.reduce((s, a) => s + a.marketCapETH, 0);
-  const avgPower = agents.length > 0
-    ? Math.round(agents.reduce((s, a) => s + a.powerScore.total, 0) / agents.length)
+  const totalVol = filtered.reduce((s, a) => s + a.volume24hETH, 0);
+  const totalMcap = filtered.reduce((s, a) => s + a.marketCapETH, 0);
+  const avgPower = filtered.length > 0
+    ? Math.round(filtered.reduce((s, a) => s + a.powerScore.total, 0) / filtered.length)
     : 0;
-  const totalHolders = agents.reduce((s, a) => s + a.holders, 0);
+  const totalHolders = filtered.reduce((s, a) => s + a.holders, 0);
+
+  const isFiltered = filterType !== 'all' || filterPower !== 'all' || filterActivity !== 'all' || searchQuery.trim() !== '';
 
   return (
-    <div>
+    <div className="relative">
+      {/* Detail panel overlay */}
+      {selectedAgent && <AgentDetailPanel />}
+
       {/* Refresh indicator */}
       {refreshing && (
         <div className="flex items-center gap-2 mb-2 font-mono text-[9px] text-crt-dim opacity-50">
@@ -58,11 +110,55 @@ export default function AgentGrid() {
 
       {/* Network stats */}
       <div className="grid grid-cols-2 sm:grid-cols-5 gap-px mb-4 border border-[#1e0606]">
-        <Stat label="agents" value={`${agents.length}`} />
+        <Stat label="agents" value={isFiltered ? `${filtered.length} / ${agents.length}` : `${agents.length}`} />
         <Stat label="avg power" value={String(avgPower)} accent={avgPower > 50} />
         <Stat label="total mcap" value={totalMcap > 0 ? formatMcap(totalMcap, ethUsdPrice) : '—'} />
         <Stat label="24h volume" value={totalVol > 0 ? formatVol(totalVol, ethUsdPrice) : '—'} />
         <Stat label="holders" value={totalHolders > 0 ? String(totalHolders) : '—'} />
+      </div>
+
+      {/* Filter bar */}
+      <div className="flex flex-wrap items-center gap-3 mb-3 font-mono text-[10px]">
+        {/* Type chips */}
+        <ChipGroup
+          options={[
+            { value: 'all', label: 'All' },
+            { value: 'agents', label: 'Agents' },
+            { value: 'humans', label: 'Humans' },
+          ]}
+          selected={filterType}
+          onChange={(v) => setFilterType(v as 'all' | 'agents' | 'humans')}
+        />
+        <span className="text-[#1e0606]">│</span>
+        {/* Power chips */}
+        <ChipGroup
+          options={[
+            { value: 'all', label: 'Any PWR' },
+            { value: '50+', label: '50+' },
+            { value: '75+', label: '75+' },
+          ]}
+          selected={filterPower}
+          onChange={(v) => setFilterPower(v as 'all' | '50+' | '75+')}
+        />
+        <span className="text-[#1e0606]">│</span>
+        {/* Activity chip */}
+        <ChipGroup
+          options={[
+            { value: 'all', label: 'Any' },
+            { value: 'active', label: 'Active' },
+          ]}
+          selected={filterActivity}
+          onChange={(v) => setFilterActivity(v as 'all' | 'active')}
+        />
+        <span className="text-[#1e0606]">│</span>
+        {/* Search input */}
+        <input
+          type="text"
+          value={searchQuery}
+          onChange={(e) => setSearchQuery(e.target.value)}
+          placeholder="search..."
+          className="bg-[#060101] border border-[#1e0606] text-crt-text text-[10px] px-2 py-1 w-[120px] font-mono placeholder:text-[#333] focus:outline-none focus:border-[#ff444440]"
+        />
       </div>
 
       {lastRefresh && (
@@ -76,7 +172,9 @@ export default function AgentGrid() {
       {/* Filter notice */}
       <div className="flex items-center gap-2 mb-3 font-mono text-[10px] text-crt-dim opacity-45">
         <span className="text-[6px] text-[#ff4444] opacity-60">&#x25C6;</span>
-        showing agents with 5+ holders and &gt;0.01 ETH mcap
+        {isFiltered
+          ? `showing ${filtered.length} of ${agents.length} players`
+          : 'showing agents with 5+ holders and active market cap'}
       </div>
 
       {sorted.length === 0 ? (
@@ -100,7 +198,15 @@ export default function AgentGrid() {
 
           {/* Rows */}
           {sorted.map((agent, i) => (
-            <AgentRow key={agent.tokenAddress} agent={agent} rank={i + 1} ethUsdPrice={ethUsdPrice} />
+            <AgentRow
+              key={agent.tokenAddress}
+              agent={agent}
+              rank={i + 1}
+              ethUsdPrice={ethUsdPrice}
+              delta={agentDeltas.get(agent.tokenAddress)}
+              onSelect={() => setSelectedAgent(agent.tokenAddress)}
+              isSelected={selectedAgent === agent.tokenAddress}
+            />
           ))}
         </div>
       )}
@@ -110,11 +216,11 @@ export default function AgentGrid() {
 
 function Stat({ label, value, sub, accent }: { label: string; value: string; sub?: string; accent?: boolean }) {
   return (
-    <div className="bg-[#060101] px-4 py-3.5 font-mono">
-      <div className="text-[10px] text-crt-dim uppercase tracking-[0.2em] opacity-60 mb-1">{label}</div>
+    <div className="bg-[#060101] px-4 py-4 font-mono">
+      <div className="text-[11px] text-crt-dim uppercase tracking-[0.2em] opacity-60 mb-1">{label}</div>
       <div
-        className={`text-[18px] ${accent ? 'text-crt-green' : 'text-crt-text'}`}
-        style={accent ? { textShadow: '0 0 8px rgba(52,211,153,0.4)' } : undefined}
+        className={`text-[28px] font-bold ${accent ? 'text-crt-green' : 'text-crt-text'}`}
+        style={accent ? { textShadow: '0 0 8px rgba(52,211,153,0.4)' } : { textShadow: '0 0 4px rgba(255,255,255,0.05)' }}
       >
         {value}
       </div>
@@ -140,6 +246,30 @@ function SortHeader({
   );
 }
 
+function RankDeltaBadge({ delta }: { delta: number }) {
+  if (delta === 0) return null;
+  const up = delta > 0;
+  return (
+    <span
+      className={`text-[9px] font-mono ml-1 ${up ? 'text-crt-green' : 'text-[#ff4444]'}`}
+      style={{ textShadow: up ? '0 0 4px rgba(52,211,153,0.4)' : '0 0 4px rgba(255,68,68,0.3)' }}
+    >
+      {up ? '↑' : '↓'}{Math.abs(delta)}
+    </span>
+  );
+}
+
+function NewBadge() {
+  return (
+    <span
+      className="text-[8px] font-mono ml-1.5 px-1 py-px border border-[#a78bfa] text-[#a78bfa] uppercase tracking-wider animate-pulse"
+      style={{ textShadow: '0 0 4px rgba(167,139,250,0.4)' }}
+    >
+      new
+    </span>
+  );
+}
+
 function PowerBar({ score }: { score: PowerScore }) {
   const color =
     score.total >= 75 ? '#34d399' :
@@ -150,18 +280,19 @@ function PowerBar({ score }: { score: PowerScore }) {
   const glow = score.total >= 75 ? `0 0 6px ${color}40` : 'none';
 
   return (
-    <div className="flex items-center gap-1.5 group relative">
-      <div className="w-[50px] h-[6px] bg-[#0a0303] border border-[#1e0606] overflow-hidden">
+    <div className="flex items-center gap-2 group relative">
+      <div className="w-[80px] h-[12px] bg-[#0a0303] border border-[#1e0606] overflow-hidden">
         <div
           className="h-full transition-all duration-500"
           style={{
             width: `${score.total}%`,
             backgroundColor: color,
             boxShadow: glow,
+            backgroundImage: 'repeating-linear-gradient(90deg, transparent 0px, transparent 6px, rgba(0,0,0,0.4) 6px, rgba(0,0,0,0.4) 7px)',
           }}
         />
       </div>
-      <span className="text-[13px] opacity-80" style={{ color, textShadow: glow }}>
+      <span className="text-[20px] font-bold opacity-90" style={{ color, textShadow: glow }}>
         {score.total}
       </span>
       {/* Tooltip */}
@@ -180,40 +311,83 @@ function PowerBar({ score }: { score: PowerScore }) {
   );
 }
 
-function AgentRow({ agent, rank, ethUsdPrice }: { agent: Agent; rank: number; ethUsdPrice: number }) {
+function ChipGroup<T extends string>({
+  options, selected, onChange,
+}: {
+  options: Array<{ value: T; label: string }>; selected: T; onChange: (v: T) => void;
+}) {
+  return (
+    <div className="flex gap-1">
+      {options.map((opt) => {
+        const active = selected === opt.value;
+        return (
+          <button
+            key={opt.value}
+            onClick={() => onChange(opt.value)}
+            className={`px-2 py-0.5 cursor-pointer transition-all border ${
+              active
+                ? 'border-[#ff444460] text-crt-accent-glow bg-[#ff444410]'
+                : 'border-[#1e0606] text-crt-dim opacity-50 hover:opacity-80 hover:border-[#ff444430]'
+            }`}
+            style={active ? { textShadow: '0 0 6px rgba(255,68,68,0.3)' } : undefined}
+          >
+            {opt.label}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+function AgentRow({
+  agent, rank, ethUsdPrice, delta, onSelect, isSelected,
+}: {
+  agent: Agent; rank: number; ethUsdPrice: number; delta?: AgentDelta; onSelect: () => void; isSelected: boolean;
+}) {
   const pct = agent.priceChange24h;
   const pctColor = pct > 0 ? 'text-crt-green' : pct < 0 ? 'text-[#ff4444]' : 'text-crt-dim opacity-30';
   const pctText = pct !== 0 ? `${pct > 0 ? '+' : ''}${pct.toFixed(1)}%` : '—';
 
+  // Determine mcap flash class based on delta
+  const mcapFlash = delta && !delta.isNew && Math.abs(delta.mcapDeltaPct) >= 5
+    ? delta.mcapDeltaPct > 0 ? 'mcap-flash-green' : 'mcap-flash-red'
+    : '';
+
   return (
-    <a
-      href={agent.flaunchUrl}
-      target="_blank"
-      rel="noopener noreferrer"
-      className="agent-row-grid font-mono text-[13px] border-b border-[#0e0404] transition-all hover:bg-[#0a0303] no-underline group"
+    <div
+      onClick={onSelect}
+      className={`agent-row-grid font-mono text-[13px] border-b border-[#0e0404] transition-all hover:bg-[#0a0303] cursor-pointer group ${isSelected ? 'bg-[#0a0303] border-l-2 border-l-[#ff4444]' : ''}`}
     >
       {/* Rank */}
-      <span className="px-3 py-2.5 text-crt-dim opacity-50">{rank}</span>
+      <span className="px-3 py-4 flex items-center justify-center">
+        {rank <= 3 ? (
+          <span className={`rank-badge rank-badge-${rank}`}>{rank}</span>
+        ) : (
+          <span className="text-crt-dim opacity-50 text-[14px]">{rank}</span>
+        )}
+        {delta && delta.isNew && <NewBadge />}
+        {delta && !delta.isNew && <RankDeltaBadge delta={delta.rankDelta} />}
+      </span>
 
       {/* Agent name + symbol + description */}
-      <span className="px-3 py-2.5 flex items-center gap-2.5 min-w-0">
+      <span className="px-3 py-4 flex items-center gap-3 min-w-0">
         {agent.image ? (
           <img
             src={agent.image}
             alt=""
-            className="w-8 h-8 border border-[#1e0606] shrink-0"
+            className="w-12 h-12 border border-[#1e0606] shrink-0"
             style={{ imageRendering: 'pixelated' }}
           />
         ) : (
-          <span className="w-8 h-8 border border-[#1e0606] bg-[#0a0303] shrink-0 flex items-center justify-center text-[8px] text-[#1e0606]">·</span>
+          <span className="w-12 h-12 border border-[#1e0606] bg-[#0a0303] shrink-0 flex items-center justify-center text-[10px] text-[#1e0606]">·</span>
         )}
         <span className="min-w-0">
-          <span className="flex items-baseline gap-1.5 truncate">
-            <span className="text-crt-text group-hover:text-crt-accent-glow transition-colors">{agent.name}</span>
-            <span className="text-crt-dim opacity-40 text-[11px]">{agent.symbol}</span>
+          <span className="flex items-baseline gap-2 truncate">
+            <span className="text-[18px] font-bold text-crt-text group-hover:text-crt-accent-glow transition-colors">{agent.name}</span>
+            <span className="text-crt-dim opacity-40 text-[14px]">{agent.symbol}</span>
           </span>
           {agent.description && (
-            <span className="block text-[10px] text-crt-dim opacity-30 truncate leading-tight mt-0.5">
+            <span className="block text-[11px] text-crt-dim opacity-30 truncate leading-tight mt-0.5">
               {agent.description.slice(0, 60)}
             </span>
           )}
@@ -226,17 +400,17 @@ function AgentRow({ agent, rank, ethUsdPrice }: { agent: Agent; rank: number; et
       </span>
 
       {/* MCap */}
-      <span className="px-3 py-2.5 text-crt-text opacity-85 whitespace-nowrap">
+      <span className={`px-3 py-4 text-[18px] text-crt-text opacity-85 whitespace-nowrap ${mcapFlash}`}>
         {agent.marketCapETH > 0 ? formatMcap(agent.marketCapETH, ethUsdPrice) : '—'}
       </span>
 
       {/* 24h change */}
-      <span className={`px-3 py-2.5 whitespace-nowrap ${pctColor}`}>
+      <span className={`px-3 py-4 text-[14px] whitespace-nowrap ${pctColor}`}>
         {pctText}
       </span>
 
       {/* Holders */}
-      <span className="px-3 py-2.5 text-crt-text opacity-75">
+      <span className="px-3 py-4 text-[14px] text-crt-text opacity-75">
         {agent.holders > 0 ? agent.holders : '—'}
         {agent.crossHoldings > 0 && (
           <span className="text-[#a78bfa] text-[10px] ml-0.5" title="Cross-holdings from other agents">
@@ -244,6 +418,6 @@ function AgentRow({ agent, rank, ethUsdPrice }: { agent: Agent; rank: number; et
           </span>
         )}
       </span>
-    </a>
+    </div>
   );
 }

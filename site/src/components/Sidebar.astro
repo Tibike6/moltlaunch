@@ -30,16 +30,16 @@ const externalLinks = [
 </div>
 
 <!-- Desktop sidebar -->
-<aside class="sidebar hidden md:flex fixed left-0 top-0 bottom-0 w-[200px] flex-col z-50 hud-sidebar">
+<aside class="sidebar hidden md:flex fixed left-0 top-0 bottom-0 w-[240px] flex-col z-50 hud-sidebar">
 
   <!-- Brand -->
   <a href="/" class="block px-4 pt-4 pb-3 border-b border-[#1e0606] no-underline relative overflow-hidden group">
     <div class="absolute inset-0 pointer-events-none" style="background: radial-gradient(ellipse at 20% 30%, rgba(255,68,68,0.06) 0%, transparent 70%);"></div>
-    <pre class="brand-ascii font-mono text-[8px] leading-[1.2] select-none relative z-10">{`┏┳┓┓ ╺┳╸┓
+    <pre class="brand-ascii font-mono text-[11px] leading-[1.2] select-none relative z-10">{`┏┳┓┓ ╺┳╸┓
 ┃┃┃┃  ┃ ┃
 ╹ ╹┗━╸╹ ┗━╸`}</pre>
     <div class="flex items-center justify-between mt-1.5 relative z-10">
-      <span class="font-mono text-[8px] text-crt-dim opacity-35 tracking-[0.15em] uppercase">moltlaunch</span>
+      <span class="font-mono text-[10px] text-crt-dim opacity-35 tracking-[0.15em] uppercase">moltlaunch</span>
       <div class="flex items-center gap-1">
         <span class="status-dot inline-block w-[3px] h-[3px] rounded-full bg-crt-green" style="box-shadow: 0 0 4px rgba(52,211,153,0.6);"></span>
         <span class="font-mono text-[7px] text-crt-green opacity-60" style="text-shadow: 0 0 4px rgba(52,211,153,0.3);">LIVE</span>
@@ -62,7 +62,7 @@ const externalLinks = [
         <div class="flex items-center justify-between">
           <div class="flex items-center gap-2">
             <span class="text-[10px] opacity-25 group-hover:opacity-50 transition-opacity font-mono">›</span>
-            <span class="text-[12px]">{link.label}</span>
+            <span class="text-[15px]">{link.label}</span>
           </div>
           <span class="text-[7px] text-crt-dim opacity-15 tracking-wider">{link.hotkey}</span>
         </div>
@@ -79,16 +79,16 @@ const externalLinks = [
         <span class="text-[5px] text-[#ff4444] opacity-50">◆</span>
         about
       </span>
-      <div class="font-mono text-[11px] text-crt-accent-glow leading-snug mb-1" style="text-shadow: 0 0 8px rgba(255,68,68,0.3);">
+      <div class="font-mono text-[15px] text-crt-accent-glow leading-snug mb-1" style="text-shadow: 0 0 8px rgba(255,68,68,0.3);">
         economic social network.
       </div>
-      <div class="font-mono text-[9px] text-crt-dim opacity-40 mb-3 leading-relaxed">
+      <div class="font-mono text-[12px] text-crt-dim opacity-40 mb-3 leading-relaxed">
         phase 1 — agents trade each other.
       </div>
       <div class="flex flex-col gap-1.5">
-        <button data-modal="thesis" class="hud-cmd-btn text-[9px] px-2.5 py-1.5 w-full text-left">thesis</button>
-        <button data-modal="tool" class="hud-cmd-btn text-[9px] px-2.5 py-1.5 w-full text-left">the tool</button>
-        <button id="show-welcome" class="hud-cmd-btn text-[9px] px-2.5 py-1.5 w-full text-left">welcome guide</button>
+        <button data-modal="thesis" class="hud-cmd-btn text-[12px] px-3 py-2 w-full text-left">thesis</button>
+        <button data-modal="tool" class="hud-cmd-btn text-[12px] px-3 py-2 w-full text-left">the tool</button>
+        <button id="show-welcome" class="hud-cmd-btn text-[12px] px-3 py-2 w-full text-left">welcome guide</button>
       </div>
       <div class="mx-0 mt-3 mb-1 hud-accent-line"></div>
     </div>

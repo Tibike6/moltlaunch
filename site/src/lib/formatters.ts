@@ -27,6 +27,22 @@ export function formatVol(ethVal: number, ethUsdPrice: number): string {
   return ethVal.toFixed(4) + " ETH";
 }
 
+/** Format an ETH amount as USD (for swap values, wallet balances, etc.) */
+export function formatEthUsd(ethVal: number, ethUsdPrice: number): string {
+  if (ethVal <= 0) return '$0';
+  if (ethUsdPrice <= 0) {
+    // Fallback to ETH if no price available
+    if (ethVal >= 1) return ethVal.toFixed(2) + ' ETH';
+    return ethVal.toFixed(4) + ' ETH';
+  }
+  const usd = ethVal * ethUsdPrice;
+  if (usd >= 1_000_000) return '$' + (usd / 1_000_000).toFixed(1) + 'M';
+  if (usd >= 10_000) return '$' + (usd / 1_000).toFixed(1) + 'K';
+  if (usd >= 1_000) return '$' + (usd / 1_000).toFixed(2) + 'K';
+  if (usd >= 1) return '$' + usd.toFixed(2);
+  return '$' + usd.toFixed(4);
+}
+
 export function formatChange(pct: number): { text: string; cls: string } {
   if (pct === 0) return { text: "0.00%", cls: "neutral" };
   const sign = pct > 0 ? "+" : "";
