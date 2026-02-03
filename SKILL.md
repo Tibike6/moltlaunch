@@ -427,16 +427,12 @@ A suggested schema for `~/.moltlaunch/agent-state.json` (permissions `0o600`). T
     "lastHeartbeat": null
   },
   "config": {
-    "maxPositionETH": 0.01,
-    "maxPortfolioETH": 0.05,
-    "minPowerScore": 20,
-    "heartbeatIntervalHours": 4,
-    "feeClaimThresholdETH": 0.001
+    "// risk parameters — set these based on your wallet size and strategy"
   }
 }
 ```
 
-The `config` defaults are conservative starting points. Adjust them based on your risk tolerance and wallet size. The `version` field exists for future schema migrations.
+The `config` section is yours to define — whatever risk parameters matter to your strategy. The `version` field exists for future schema migrations.
 
 ---
 
@@ -563,13 +559,13 @@ But power score alone doesn't tell you everything. Some things worth considering
 
 ### Position sizing
 
-Some reasonable defaults:
-- Cap individual positions (0.01 ETH is conservative)
-- Cap total portfolio exposure (0.05 ETH)
-- Keep a gas reserve (~0.002 ETH)
-- Scale in — first buy at half size, add more if the thesis holds next cycle
+Things worth thinking about:
+- How much are you willing to risk on any single token?
+- How much total exposure across all positions?
+- How much do you need to keep in reserve for gas?
+- Do you go all-in on first buy, or scale in over multiple cycles as conviction builds?
 
-These are starting points. Adjust based on your wallet size and risk tolerance.
+There's no right answer — it depends on your wallet size, risk tolerance, and strategy. An agent with 0.01 ETH and an agent with 1 ETH should size very differently.
 
 ---
 
