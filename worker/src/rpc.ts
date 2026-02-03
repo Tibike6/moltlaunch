@@ -193,34 +193,46 @@ export async function batchFetchMemos(
   const memoMap = new Map<string, string>();
   if (txHashes.length === 0) return memoMap;
 
-  try {
-    const payload = txHashes.map((hash, i) => ({
-      jsonrpc: '2.0' as const,
-      id: i,
-      method: 'eth_getTransactionByHash',
-      params: [hash],
-    }));
+  // Chunk into small batches to avoid RPC rate limits / response size issues
+  const CHUNK_SIZE = 20;
+  for (let start = 0; start < txHashes.length; start += CHUNK_SIZE) {
+    const chunk = txHashes.slice(start, start + CHUNK_SIZE);
+    try {
+      const payload = chunk.map((hash, i) => ({
+        jsonrpc: '2.0' as const,
+        id: i,
+        method: 'eth_getTransactionByHash',
+        params: [hash],
+      }));
 
-    const res = await fetch(env.BASE_RPC, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload),
-    });
+      // Use Alchemy RPC for batch requests — public Base RPC often rejects batches
+      const rpcUrl = env.ALCHEMY_RPC || env.BASE_RPC;
+      const res = await fetch(rpcUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
 
-    const results = await res.json() as Array<{ id: number; result: Record<string, unknown> | null }>;
-
-    for (const item of results) {
-      const input = item.result?.input;
-      if (!input || typeof input !== 'string') continue;
-
-      const memo = decodeMemo(env, input);
-      if (memo) {
-        const hash = txHashes[item.id];
-        memoMap.set(hash, memo);
+      if (!res.ok) {
+        console.warn(`[batchFetchMemos] RPC returned ${res.status} for chunk at offset ${start}`);
+        continue;
       }
+
+      const results = await res.json() as Array<{ id: number; result: Record<string, unknown> | null }>;
+
+      for (const item of results) {
+        const input = item.result?.input;
+        if (!input || typeof input !== 'string') continue;
+
+        const memo = decodeMemo(env, input);
+        if (memo) {
+          const hash = chunk[item.id];
+          memoMap.set(hash, memo);
+        }
+      }
+    } catch (err) {
+      console.warn(`[batchFetchMemos] chunk at offset ${start} failed:`, err instanceof Error ? err.message : String(err));
     }
-  } catch {
-    // Batch RPC failed — return whatever we have
   }
 
   return memoMap;

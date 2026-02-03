@@ -130,4 +130,5 @@ export const useNetworkStore = create<NetworkState>((set, get) => ({
         (a) => Date.now() - a.startTime < ANIMATION_TTL,
       ),
     })),
+
 }));

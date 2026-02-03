@@ -1,6 +1,7 @@
 import HoldingsGraph from './HoldingsGraph';
 import NetworkStatsBar from './NetworkStatsBar';
 import AgentDetailPanel from './AgentDetailPanel';
+import SwapFeed from './SwapFeed';
 import SwapTicker from './SwapTicker';
 import { useNetworkGame } from '../hooks/useNetworkGame';
 
@@ -66,6 +67,9 @@ export default function NetworkArena() {
         {/* Scanline overlay as a div — pointer-events:none so SVG stays interactive */}
         <div className="hud-scanline-overlay" />
       </div>
+
+      {/* Agent comms — memo feed */}
+      <SwapFeed />
 
       {/* Event log — bottom console bar */}
       <SwapTicker />

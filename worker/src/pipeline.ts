@@ -35,7 +35,7 @@ export async function runPipeline(env: Env): Promise<void> {
   try {
     await executePipeline(env);
   } catch (err) {
-    console.error('[pipeline] failed:', err instanceof Error ? err.message : String(err));
+    console.error('[pipeline] failed:', err instanceof Error ? err.stack ?? err.message : String(err));
   }
 }
 
